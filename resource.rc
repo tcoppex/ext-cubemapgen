@@ -1,0 +1,130 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// EFFECTFILE
+//
+
+IDR_DXUTSHARED_FX       EFFECTFILE              "Effects\\DXUTShared_Resource.fx"
+IDR_CUBEGENRENDER_FX    EFFECTFILE              "Effects\\CubeGenRender_Resource.fx"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTUREDDS
+//
+
+IDR_UITEXTURE           TEXTUREDDS              "UI\\dxutcontrols.dds"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_PROGRESS_DIALOG DIALOGEX 0, 0, 334, 180
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION
+CAPTION "Filtering Progress"
+FONT 8, "MS Shell Dlg", 0, 0, 0x0
+BEGIN
+    CONTROL         "",IDC_FILTERING_PROGRESS_BAR,"msctls_progress32",
+                    WS_BORDER | 0x1,7,32,320,13
+    LTEXT           "Static",IDC_PROGRESS_TEXT_STATIC,7,6,320,16
+    PUSHBUTTON      "Cancel Filtering",IDC_CANCEL_FILTERING_BUTTON,18,50,69,
+                    14
+    LTEXT           "Note: There seems to be an HDRShop issue where if a plugin takes too long to complete, HDRShop will overwrite the filtering results with the input file.  When this happens, the message box pops ",
+                    IDC_STATIC,7,72,320,16
+    LTEXT           "up a warning stating that ''The plugin does not exit when queried for parameters.''  If this happens CubeMapGen writes out a backup file cube cross named ''HDRShopBackupCross.pfm'' that contains",
+                    IDC_STATIC,7,88,320,20
+    LTEXT           " the correct filtering results.  This file can be loaded back into HDRShop once the filtering is complete.",
+                    IDC_STATIC,7,104,320,21
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_PROGRESS_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 327
+        TOPMARGIN, 6
+        BOTTOMMARGIN, 173
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_ICON1               ICON                    ".\\resources\\CubeMapGen.ico"
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
