@@ -97,6 +97,9 @@
 #define CP_FILTER_TYPE_CONE             1
 #define CP_FILTER_TYPE_COSINE           2
 #define CP_FILTER_TYPE_ANGULAR_GAUSSIAN 3
+// SL BEGIN
+#define CP_FILTER_TYPE_COSINE_POWER     4
+// SL END
 
 
 // Edge fixup type (how to perform smoothing near edge region)
@@ -110,12 +113,13 @@
 // Max potential cubemap size is limited to 65k (2^16 texels) on a side
 #define CP_MAX_MIPLEVELS 16
 
+// SL BEGIN
 //maximum number of threads running for cubemap processor is 2
-#define CP_MAX_FILTER_THREADS 2
+//#define CP_MAX_FILTER_THREADS 2
 
 //initial number of filtering threads for cubemap processor
-#define CP_INITIAL_NUM_FILTER_THREADS 1
-
+//#define CP_INITIAL_NUM_FILTER_THREADS 1
+// SL END
 
 //current status of cubemap processor
 #define CP_STATUS_READY             0
@@ -153,6 +157,29 @@ struct SFilterProgress
    float32  m_FractionCompleted;    //Approximate fraction of work completed for this thread
 };
 
+// SL BEGIN
+
+struct SThreadFilterFace
+{
+	class CCubeMapProcessor *m_cmProc;
+
+	CImageSurface*	m_SrcCubeMap; 
+	CImageSurface*	m_DstCubeMap;
+	float32			m_FilterConeAngle;
+	int32			m_FilterType;
+	int32			m_FaceIdx; 
+	uint32		    m_SpecularPower;
+	float32			m_dotProdThresh;
+	int32			m_filterSize;
+
+	HANDLE			m_ThreadHandle;
+	DWORD			m_ThreadID;
+	SFilterProgress	m_ThreadProgress;
+	bool8			m_bUseSolidAngle;
+	bool8			m_bThreadInitialized;
+};
+
+// SL END
 
 //--------------------------------------------------------------------------------------------------
 //structure used to pass filtering parameters for Thread 0
@@ -167,6 +194,10 @@ struct SThreadOptionsThread0
    int32   m_FixupType;
    int32   m_FixupWidth;
    bool8   m_bUseSolidAngle;
+   // SL BEGIN
+   uint32  m_SpecularPower;
+   bool8   m_bCosinePowerOnMipmapChain;
+   // SL END
 };
 
 
@@ -184,6 +215,10 @@ struct SThreadOptionsThread1
    int32          m_FaceIdxStart; 
    int32          m_FaceIdxEnd; 
    int32          m_ThreadIdx; 
+	// SL BEGIN
+	uint32		  m_SpecularPower;
+	bool8		  m_bCosinePowerOnMipmapChain;
+	// SL END
 };
 
 
@@ -199,10 +234,11 @@ public:
 
    //information about threads actively processing the cubemap
    int32             m_NumFilterThreads;
-   bool8             m_bThreadInitialized[CP_MAX_FILTER_THREADS];
-   HANDLE            m_ThreadHandle[CP_MAX_FILTER_THREADS];
-   DWORD             m_ThreadID[CP_MAX_FILTER_THREADS];
-   SFilterProgress  m_ThreadProgress[CP_MAX_FILTER_THREADS];
+   // SL BEGIN
+   // Suppose only one CCubeMapProcessor at a time
+   static SThreadFilterFace* sg_ThreadFilterFace;
+   HANDLE DumbThreadHandle; // thread id of the main thread when in multithread mode
+   // SL END
    WCHAR             m_ProgressString[CP_MAX_PROGRESS_STRING];
 
    //filtering parameters last used for filtering
@@ -224,8 +260,10 @@ public:
 
    CImageSurface m_OutputSurface[CP_MAX_MIPLEVELS][6];   //output faces for all mip levels
 
-private:
-   //==========================================================================================================
+// SL BEGIN
+public:
+// SL END
+	//==========================================================================================================
    //BuildNormalizerCubemap(int32 a_Size, CImageSurface *a_Surface );
    // Builds a normalizer cubemap of size a_Size.  This routine deallocates the CImageSurfaces passed 
    // into the the function and reallocates them with the correct size and 3 channels to store the 
@@ -292,7 +330,11 @@ private:
    //==========================================================================================================
    void ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_DotProdThresh, CBBoxInt32 *a_FilterExtents, 
       CImageSurface *a_NormCubeMap, CImageSurface *a_SrcCubeMap, CP_ITYPE *a_DstVal, uint32 a_FilterType, 
-      bool8 a_bUseSolidAngle );
+      bool8 a_bUseSolidAngle
+	  // SL BEGIN
+	  , uint32 a_SpecularPower
+	  // SL END
+	  );
 
    //==========================================================================================================
    //void FixupCubeEdges(CImageSurface *a_CubeMap, int32 a_FixupType, int32 a_FixupWidth);
@@ -352,9 +394,25 @@ public:
    // to the class.
    //==========================================================================================================
    void FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-      int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle );
+      int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
+	  	// SL BEGIN
+		, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain
+		// SL END
+	  );
    void FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, float32 a_FilterConeAngle, 
-      int32 a_FilterType, bool8 a_bUseSolidAngle, int32 a_FaceIdxStart, int32 a_FaceIdxEnd, int32 aThreadIdx );        
+      int32 a_FilterType, bool8 a_bUseSolidAngle, int32 a_FaceIdxStart, int32 a_FaceIdxEnd, int32 aThreadIdx
+	  	// SL BEGIN
+		, uint32 a_SpecularPower
+		// SL END
+	  );        
+
+   // SL BEGIN
+	void FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
+		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain);
+
+	void FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
+		float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex);
+	// SL END
 
 public:
    CCubeMapProcessor(void);
@@ -479,7 +537,11 @@ public:
    //                                  each texel in the filter kernel in the filtering.
    //==========================================================================================================
    void InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-      int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle );
+      int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
+	  // SL BEGIN
+	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, bool8 a_bCosinePowerOnMipmapChain
+	  // SL END
+	  );
 
    //==========================================================================================================
    // void WriteMipLevelIntoAlpha(void)

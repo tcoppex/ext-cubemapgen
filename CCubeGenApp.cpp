@@ -44,6 +44,11 @@ CCubeGenApp::CCubeGenApp(void)
    //clamp max mip level using sampler state MaxMipLevel
    m_bMipLevelClampEnable = FALSE;
 
+   // SL BEGIN
+   m_bUseMultithread = TRUE;
+   m_bCosinePowerOnMipmapChain = FALSE;
+   // SL END
+
    //write mip level to alpha so the cube maps mip level can be determined by ps.2.0 or ps.2.b shaders
    m_bWriteMipLevelIntoAlpha = TRUE;
 
@@ -56,6 +61,9 @@ CCubeGenApp::CCubeGenApp(void)
    m_MipInitialFilterAngle = 1.0f;
    m_MipFilterAngleScale = 2.0f; 
    m_bUseSolidAngleWeighting = TRUE;
+   // SL BEGIN
+   m_SpecularPower = 2048; // Default to 2048 because it is a fast computation when you swtich to cosinus power filter
+   // SL END
 
    m_EdgeFixupTech = CP_FIXUP_PULL_HERMITE;
    m_bCubeEdgeFixup = TRUE;
@@ -1845,10 +1853,12 @@ void CCubeGenApp::FilterCubeMap(void)
    //m_CubeMapProcessor.FilterCubeMapMipChain(m_BaseFilterAngle, m_MipInitialFilterAngle, m_MipFilterAngleScale, 
    //    m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting);
 
+   // SL BEGIN
    //begin filtering, if one or more filtereing threads is enabled, initiate the filtering threads, and return 
    // from the function with the threads running in the background.
    m_CubeMapProcessor.InitiateFiltering(m_BaseFilterAngle, m_MipInitialFilterAngle, m_MipFilterAngleScale, 
-      m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting);
+	  m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, m_SpecularPower, m_bUseMultithread, m_bCosinePowerOnMipmapChain);
+   // SL END
 
    m_FramesSinceLastRefresh = 0;
 

@@ -6,7 +6,6 @@
 //--------------------------------------------------------------------------------------
 // (C) 2005 ATI Research, Inc., All rights reserved.
 //--------------------------------------------------------------------------------------
-
 #include "CCubeMapProcessor.h"
 
 #define CP_PI   3.14159265358979323846
@@ -21,18 +20,41 @@ DWORD WINAPI ThreadProcCPU0Filter(LPVOID a_NothingToPassToThisFunction)
 {   
    //filter cube map mipchain
    sg_FilterOptionsCPU0.m_cmProc->FilterCubeMapMipChain(
-      sg_FilterOptionsCPU0.m_BaseFilterAngle,
-      sg_FilterOptionsCPU0.m_InitialMipAngle,
-      sg_FilterOptionsCPU0.m_MipAnglePerLevelScale,
-      sg_FilterOptionsCPU0.m_FilterType,
-      sg_FilterOptionsCPU0.m_FixupType,
-      sg_FilterOptionsCPU0.m_FixupWidth,
-      sg_FilterOptionsCPU0.m_bUseSolidAngle 
-      );
+	  sg_FilterOptionsCPU0.m_BaseFilterAngle,
+	  sg_FilterOptionsCPU0.m_InitialMipAngle,
+	  sg_FilterOptionsCPU0.m_MipAnglePerLevelScale,
+	  sg_FilterOptionsCPU0.m_FilterType,
+	  sg_FilterOptionsCPU0.m_FixupType,
+	  sg_FilterOptionsCPU0.m_FixupWidth,
+	  sg_FilterOptionsCPU0.m_bUseSolidAngle 
+	  // SL BEGIN
+	  ,sg_FilterOptionsCPU0.m_SpecularPower
+	  ,sg_FilterOptionsCPU0.m_bCosinePowerOnMipmapChain	  
+	  // SL END
+  );
 
    return(CP_THREAD_COMPLETED);
 }
 
+// SL BEGIN
+DWORD WINAPI ThreadProcCPU0FilterMultithread(LPVOID a_NothingToPassToThisFunction)
+{   
+
+   //filter cube map mipchain
+  sg_FilterOptionsCPU0.m_cmProc->FilterCubeMapMipChainMultithread(
+	  sg_FilterOptionsCPU0.m_BaseFilterAngle,
+	  sg_FilterOptionsCPU0.m_InitialMipAngle,
+	  sg_FilterOptionsCPU0.m_MipAnglePerLevelScale,
+	  sg_FilterOptionsCPU0.m_FilterType,
+	  sg_FilterOptionsCPU0.m_FixupType,
+	  sg_FilterOptionsCPU0.m_FixupWidth,
+	  sg_FilterOptionsCPU0.m_bUseSolidAngle,
+	  sg_FilterOptionsCPU0.m_SpecularPower,
+	  sg_FilterOptionsCPU0.m_bCosinePowerOnMipmapChain);
+
+   return(CP_THREAD_COMPLETED);
+}
+// SL END
 
 //Filtering options for each thread
 SThreadOptionsThread1 sg_FilterOptionsCPU1;
@@ -55,7 +77,10 @@ DWORD WINAPI ThreadProcCPU1Filter(LPVOID a_NothingToPassToThisFunction)
       sg_FilterOptionsCPU1.m_FaceIdxStart,
       sg_FilterOptionsCPU1.m_FaceIdxEnd,
       sg_FilterOptionsCPU1.m_ThreadIdx 
-      ); 
+	  // SL BEGIN
+	  ,sg_FilterOptionsCPU1.m_SpecularPower
+	  // SL END
+	  ); 
       
    return(CP_THREAD_COMPLETED);
 }
@@ -629,7 +654,11 @@ void CCubeMapProcessor::DetermineFilterExtents(float32 *a_CenterTapDir, int32 a_
 //--------------------------------------------------------------------------------------
 void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_DotProdThresh, 
     CBBoxInt32 *a_FilterExtents, CImageSurface *a_NormCubeMap, CImageSurface *a_SrcCubeMap, 
-    CP_ITYPE *a_DstVal, uint32 a_FilterType, bool8 a_bUseSolidAngleWeighting )
+    CP_ITYPE *a_DstVal, uint32 a_FilterType, bool8 a_bUseSolidAngleWeighting
+	// SL BEGIN
+	,uint32 a_SpecularPower
+	// SL END
+	)
 {
    int32 iFaceIdx, u, v;
    int32 faceWidth;
@@ -742,6 +771,21 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
                         }
                      }
                      break;
+					// SL BEGIN
+				  case CP_FILTER_TYPE_COSINE_POWER:
+					 {
+                        if(tapDotProd > 0.0f)
+                        {
+						   // Apply the factor of a normalized phong BRDF here
+                           weight *= (a_SpecularPower + 2)/CP_PI * pow(tapDotProd, (float32)a_SpecularPower);
+                        }
+                        else
+                        {
+                           weight = 0.0f;
+                        }
+					 }
+					 break;
+					// SL END
                   case CP_FILTER_TYPE_DISC:
                   default:
                      break;
@@ -750,7 +794,15 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
                   //iterate over channels
                   for(k=0; k<nSrcChannels; k++)   //(aSrcCubeMap[iFaceIdx].m_NumChannels) //up to 4 channels 
                   {
-                     dstAccum[k] += weight * *(srcCubeRowStartPtr + srcCubeRowWalk);
+					 // SL BEGIN
+					 // OLD LINE : dstAccum[k] += weight * *(srcCubeRowStartPtr + srcCubeRowWalk);
+					 float32 Res = weight * *(srcCubeRowStartPtr + srcCubeRowWalk);
+					 if (a_FilterType == CP_FILTER_TYPE_COSINE_POWER)
+					 {
+						Res *= tapDotProd;
+					 }
+					 dstAccum[k] += Res;
+					// SL END                     
                      srcCubeRowWalk++;                            
                   } 
 
@@ -1153,20 +1205,19 @@ void CCubeMapProcessor::FixupCubeEdges(CImageSurface *a_CubeMap, int32 a_FixupTy
 //--------------------------------------------------------------------------------------
 CCubeMapProcessor::CCubeMapProcessor(void)
 {
-   int32 i;
-
-   //If zero filtering threads are specified then all filtering is performed in the 
-   // process that called the cubemap filtering routines.
-   //Otherwise, the filtering is performed in separate filtering threads that cubemap generates
-   m_NumFilterThreads = CP_INITIAL_NUM_FILTER_THREADS;
+   // SL BEGIN
+   // Get CPU info.
+   SYSTEM_INFO SI;
+   GetSystemInfo(&SI);
+   // TODO : In case of command line, we want to use all hardware thread available
+   m_NumFilterThreads  = SI.dwNumberOfProcessors - 1;	// - 1 cause the main core is used for the application.
+														// If no extra hardware thread is available the filering will be done the main process.
+   m_NumFilterThreads = max(min(m_NumFilterThreads, 6), 0); // We don't handle more than 6 hardware thread (6 face of cubemap) for now
+   sg_ThreadFilterFace = new SThreadFilterFace[m_NumFilterThreads];
 
    //clear all threads
-   for(i=0; i<CP_MAX_FILTER_THREADS; i++ )
-   {
-      m_bThreadInitialized[i] = FALSE;
-      m_ThreadHandle[i] = NULL;
-      m_ThreadID[0] = 0;
-   }
+   memset(sg_ThreadFilterFace, 0, m_NumFilterThreads * sizeof(SThreadFilterFace));
+   // SL END
 
    m_InputSize = 0;             
    m_OutputSize = 0;             
@@ -1186,6 +1237,10 @@ CCubeMapProcessor::CCubeMapProcessor(void)
 CCubeMapProcessor::~CCubeMapProcessor()
 {
     Clear();
+
+	// SL BEGIN
+	CP_SAFE_DELETE_ARRAY(sg_ThreadFilterFace);
+	// SL END
 }
 
 
@@ -1202,10 +1257,12 @@ void CCubeMapProcessor::Clear(void)
 
    TerminateActiveThreads();
 
-   for(i=0; i<CP_MAX_FILTER_THREADS; i++ )
+   // SL BEGIN
+   for(i=0; i<m_NumFilterThreads; i++ )
    {
-      m_bThreadInitialized[i] = FALSE;
+      sg_ThreadFilterFace[i].m_bThreadInitialized = FALSE;
    }
+   // SL END
 
    m_InputSize = 0;             
    m_OutputSize = 0;             
@@ -1241,19 +1298,25 @@ void CCubeMapProcessor::TerminateActiveThreads(void)
 {
    int32 i;
 
-   for(i=0; i<CP_MAX_FILTER_THREADS; i++)
+   // SL BEGIN
+   for(i=0; i<m_NumFilterThreads; i++)
    {
-      if( m_bThreadInitialized[i] == TRUE)
+      if(sg_ThreadFilterFace[i].m_bThreadInitialized == TRUE)
       {
-         if(m_ThreadHandle[i] != NULL)
+         if(sg_ThreadFilterFace[i].m_ThreadHandle != NULL)
          {
-            TerminateThread(m_ThreadHandle[i], CP_THREAD_TERMINATED);
-            CloseHandle(m_ThreadHandle[i]);
-            m_ThreadHandle[i] = NULL;
-            m_Status = CP_STATUS_FILTER_TERMINATED;
+            TerminateThread(sg_ThreadFilterFace[i].m_ThreadHandle, CP_THREAD_TERMINATED);
+            CloseHandle(sg_ThreadFilterFace[i].m_ThreadHandle);
+            sg_ThreadFilterFace[i].m_ThreadHandle = NULL;
          }
       }
    }
+
+   // Terminate main thread if needed
+   TerminateThread(DumbThreadHandle, CP_THREAD_TERMINATED);
+   
+   m_Status = CP_STATUS_FILTER_TERMINATED;
+   // SL END
 
 }
 
@@ -1517,7 +1580,11 @@ void CCubeMapProcessor::GetOutputFaceData(int32 a_FaceIdx, int32 a_Level, int32 
 //
 //--------------------------------------------------------------------------------------
 void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-    int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle )
+    int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
+	// SL BEGIN
+	, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain
+	// SL END
+	)
 {
    int32 i;
    float32 coneAngle;
@@ -1533,9 +1600,11 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
    PrecomputeFilterLookupTables(a_FilterType, m_InputSurface[0].m_Width, a_BaseFilterAngle);
 
    //initialize thread progress
-   m_ThreadProgress[0].m_CurrentMipLevel = 0;
-   m_ThreadProgress[0].m_CurrentRow = 0;
-   m_ThreadProgress[0].m_CurrentFace = 0;
+   // SL BEGIN
+   sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentMipLevel = 0;
+   sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentRow = 0;
+   sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentFace = 0;
+   // SL END
 
    //if less than 2 filter threads, process all filtering from within callers thread
    if(m_NumFilterThreads < 2)
@@ -1544,13 +1613,18 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
       FilterCubeSurfaces(m_InputSurface, m_OutputSurface[0], a_BaseFilterAngle, a_FilterType, a_bUseSolidAngle, 
          0,  //start at face 0 
          5,  //end at face 5
-         0); //thread 0 is processing
+         0
+		// SL BEGIN
+		, a_SpecularPower
+		// SL END
+		 ); //thread 0 is processing
    }   
    else //otherwise, split work between callers thread, and newly created thread
    {
-
+	  // SL BEGIN
       //consider thread 1 to be initialized
-      m_bThreadInitialized[1] = TRUE;
+      sg_ThreadFilterFace[1].m_bThreadInitialized = TRUE;
+	  // SL END
 
       //setup filtering options for thread1
       sg_FilterOptionsCPU1.m_cmProc = this;
@@ -1562,27 +1636,34 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
       sg_FilterOptionsCPU1.m_FaceIdxStart = 3; 
       sg_FilterOptionsCPU1.m_FaceIdxEnd = 5; 
       sg_FilterOptionsCPU1.m_ThreadIdx = 1; 
+	  // SL BEGIN
+	  sg_FilterOptionsCPU1.m_SpecularPower = a_SpecularPower;
+	  sg_FilterOptionsCPU1.m_bCosinePowerOnMipmapChain = a_bCosinePowerOnMipmapChain;
 
-      m_ThreadProgress[1].m_CurrentMipLevel = 0;
-      m_ThreadProgress[1].m_CurrentFace = 3;
-      m_ThreadProgress[1].m_CurrentRow = 0;
+   	  sg_ThreadFilterFace[1].m_ThreadProgress.m_CurrentMipLevel = 0;
+      sg_ThreadFilterFace[1].m_ThreadProgress.m_CurrentFace = 3;
+      sg_ThreadFilterFace[1].m_ThreadProgress.m_CurrentRow = 0;
 
       //start thread 1
-      m_ThreadHandle[1] = CreateThread(
-         &secAttr,                     //security attributes
+      sg_ThreadFilterFace[1].m_ThreadHandle = CreateThread(
+    	 &secAttr,                     //security attributes
          0,                            //0 is sentinel for use default stack size
          ThreadProcCPU1Filter,         //LPTHREAD_START_ROUTINE
          (LPVOID)NULL,                 // pass nothing into function
          NULL,                         // no creation flags (run thread immediately)
-         &m_ThreadID[1] );
-
+         &sg_ThreadFilterFace[1].m_ThreadID );
+	  // SL END
 
 
       //Filter the top mip level (initial filtering used for diffuse or blurred specular lighting )
       FilterCubeSurfaces(m_InputSurface, m_OutputSurface[0], a_BaseFilterAngle, a_FilterType, a_bUseSolidAngle, 
          0,  //start at face 0 
          2,  //end at face 2
-         0); //thread 0 is processing
+         0
+		// SL BEGIN
+		, a_SpecularPower
+		// SL END
+		 ); //thread 0 is processing
 
       //spin and sleep until thread1 is completed before continuing
       while( IsFilterThreadActive(1) )
@@ -1591,22 +1672,33 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
       }
    }
 
-   m_ThreadProgress[0].m_CurrentMipLevel = 1;
-   m_ThreadProgress[0].m_CurrentRow = 0;
-   m_ThreadProgress[0].m_CurrentFace = 0;
-
+   // SL BEGIN
+   sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentMipLevel = 1;
+   sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentRow = 0;
+   sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentFace = 0;
+   // SL END
 
    FixupCubeEdges(m_OutputSurface[0], a_FixupType, a_FixupWidth);
 
    //Cone angle start (for generating subsequent mip levels)
    coneAngle = a_InitialMipAngle;
 
+   // SL BEGIN
+   // In case of cosine power filter use cosine filter for generate mip level
+   if (a_FilterType == CP_FILTER_TYPE_COSINE_POWER)
+   {
+		a_FilterType = CP_FILTER_TYPE_COSINE;
+   }
+	// SL END
+
    //generate subsequent mip levels
    for(i=0; i<(m_NumMipLevels-1); i++)
    {
-      m_ThreadProgress[0].m_CurrentMipLevel = i+1;
-      m_ThreadProgress[0].m_CurrentRow = 0;
-      m_ThreadProgress[0].m_CurrentFace = 0;
+	  // SL BEGIN
+      sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentMipLevel = i+1;
+      sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentRow = 0;
+      sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentFace = 0;
+	  // SL END
 
       //Build filter lookup tables based on the source miplevel size
       PrecomputeFilterLookupTables(a_FilterType, m_OutputSurface[i][0].m_Width, coneAngle);
@@ -1615,11 +1707,17 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
       FilterCubeSurfaces(m_OutputSurface[i], m_OutputSurface[i+1], coneAngle, a_FilterType, a_bUseSolidAngle,
          0,  //start at face 0 
          5,  //end at face 5
-         0); //thread 0 is processing
+         0
+		// SL BEGIN
+		, a_SpecularPower
+		// SL END
+		 ); //thread 0 is processing
 
-      m_ThreadProgress[0].m_CurrentMipLevel = i+2;
-      m_ThreadProgress[0].m_CurrentRow = 0;
-      m_ThreadProgress[0].m_CurrentFace = 0;
+	  // SL BEGIN
+      sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentMipLevel = i+2;
+      sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentRow = 0;
+      sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentFace = 0;
+	  // SL END
 
       FixupCubeEdges(m_OutputSurface[i+1], a_FixupType, a_FixupWidth);        
 
@@ -1690,7 +1788,11 @@ void CCubeMapProcessor::PrecomputeFilterLookupTables(uint32 a_FilterType, int32 
 //--------------------------------------------------------------------------------------
 void CCubeMapProcessor::FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
     float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, int32 a_FaceIdxStart, 
-    int32 a_FaceIdxEnd, int32 a_ThreadIdx)
+    int32 a_FaceIdxEnd, int32 a_ThreadIdx
+	// SL BEGIN
+	, uint32 a_SpecularPower
+	// SL END
+	)
 {
     //CImageSurface normCubeMap[6];     //
     CBBoxInt32    filterExtents[6];   //bounding box per face to specify region to process
@@ -1740,20 +1842,26 @@ void CCubeMapProcessor::FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSu
     dotProdThresh = cosf( ((float32)CP_PI / 180.0f) * filterAngle );
 
     //thread progress
-    m_ThreadProgress[a_ThreadIdx].m_StartFace = a_FaceIdxStart;
-    m_ThreadProgress[a_ThreadIdx].m_EndFace = a_FaceIdxEnd;
+	// SL BEGIN
+    sg_ThreadFilterFace[a_ThreadIdx].m_ThreadProgress.m_StartFace = a_FaceIdxStart;
+    sg_ThreadFilterFace[a_ThreadIdx].m_ThreadProgress.m_EndFace = a_FaceIdxEnd;
+	// SL END
 
     //process required faces
     for(iCubeFace = a_FaceIdxStart; iCubeFace <= a_FaceIdxEnd; iCubeFace++)
     {
         CP_ITYPE *texelPtr = a_DstCubeMap[iCubeFace].m_ImgData;
 
-        m_ThreadProgress[a_ThreadIdx].m_CurrentFace = iCubeFace;
+		// SL BEGIN
+        sg_ThreadFilterFace[a_ThreadIdx].m_ThreadProgress.m_CurrentFace = iCubeFace;
+		// SL END
 
         //iterate over dst cube map face texel
         for(v = 0; v < dstSize; v++)
         {
-           m_ThreadProgress[a_ThreadIdx].m_CurrentRow = v;
+		   // SL BEGIN
+           sg_ThreadFilterFace[a_ThreadIdx].m_ThreadProgress.m_CurrentRow = v;
+		   // SL END
 
             for(u=0; u<dstSize; u++)
             {
@@ -1769,7 +1877,11 @@ void CCubeMapProcessor::FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSu
                 DetermineFilterExtents(centerTapDir, srcSize, filterSize, filterExtents );
                     
                 //perform filtering of src faces using filter extents 
-                ProcessFilterExtents(centerTapDir, dotProdThresh, filterExtents, m_NormCubeMap, a_SrcCubeMap, texelPtr, a_FilterType, a_bUseSolidAngle);
+                ProcessFilterExtents(centerTapDir, dotProdThresh, filterExtents, m_NormCubeMap, a_SrcCubeMap, texelPtr, a_FilterType, a_bUseSolidAngle
+					// SL BEGIN
+					, a_SpecularPower
+					// SL END
+					);
 
                 texelPtr += a_DstCubeMap[iCubeFace].m_NumChannels;
             }            
@@ -1785,8 +1897,29 @@ void CCubeMapProcessor::FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSu
 //
 //--------------------------------------------------------------------------------------
 void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, 
-      float32 a_MipAnglePerLevelScale, int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle )
+      float32 a_MipAnglePerLevelScale, int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
+	  // SL BEGIN
+	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, bool8 a_bCosinePowerOnMipmapChain
+	  // SL END
+	  )
 {
+	// SL BEGIN
+	// If we use SpecularPower, automatically calculate the a_BaseFilterAngle required, this will speed the process
+	if (a_FilterType == CP_FILTER_TYPE_COSINE_POWER)
+	{
+		a_BaseFilterAngle = 180.0f; // If a a_SpecularPower of 0 is specified, this is this value which will be used
+		for (int32 i = 1; i <= 90; ++i) // No need to test 0, always 1.
+		{
+			float32 Cosine = powf(cosf((float32)i * CP_PI / 180.0f), (float32)a_SpecularPower);
+			if (Cosine < 0.000001f) // Empirical threshold
+			{
+				a_BaseFilterAngle = 2 * (float32)i; // cause cubemap gen divide by 2 later
+				break;
+			}			
+		}
+	}
+	// SL END
+
    SECURITY_ATTRIBUTES secAttr;
 
    secAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -1806,7 +1939,9 @@ void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_I
    if(m_NumFilterThreads > 0)
    {
       //consider thread to be initialized
-      m_bThreadInitialized[0] = TRUE;
+      // SL BEGIN
+      sg_ThreadFilterFace[0].m_bThreadInitialized = TRUE;
+	  // SL END
 
       sg_FilterOptionsCPU0.m_cmProc = this;
 
@@ -1817,21 +1952,49 @@ void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_I
       sg_FilterOptionsCPU0.m_FixupType = a_FixupType;
       sg_FilterOptionsCPU0.m_FixupWidth = a_FixupWidth;
       sg_FilterOptionsCPU0.m_bUseSolidAngle = a_bUseSolidAngle;
+	  // SL BEGIN
+	  sg_FilterOptionsCPU0.m_SpecularPower = a_SpecularPower;
+	  sg_FilterOptionsCPU0.m_bCosinePowerOnMipmapChain = a_bCosinePowerOnMipmapChain;
+	  // SL END
 
       m_Status = CP_STATUS_PROCESSING;
 
-      m_ThreadHandle[0] = CreateThread(
-         &secAttr,                     //security attributes
-         0,                            //0 is sentinel for use default stack size
-         ThreadProcCPU0Filter,         //LPTHREAD_START_ROUTINE
-         (LPVOID)NULL,                 // pass nothing into function
-         NULL,                         // no creation flags (run thread immediately)
-         &m_ThreadID[0] );
+	  // SL BEGIN
+	  if (a_bUseMultithread)
+	  {
+		  // In case of multithread. In order to be able to get progress and preview updated, 
+		  // we create a thread which only purpose is to launch other thread to process cubemap face.
+		  // So this "dumb" thread is not handled as the other.
+		  sg_ThreadFilterFace[0].m_bThreadInitialized = FALSE;
+		  DWORD DumbThreadID;
+		  DumbThreadHandle = CreateThread(
+				 &secAttr,                     //security attributes
+				 0,                            //0 is sentinel for use default stack size
+				 ThreadProcCPU0FilterMultithread, //LPTHREAD_START_ROUTINE
+				 (LPVOID)NULL,                 // pass nothing into function
+				 NULL,                         // no creation flags (run thread immediately)
+				 &DumbThreadID );
+	  }
+	  else
+	  {
+		  sg_ThreadFilterFace[0].m_ThreadHandle = CreateThread(
+			 &secAttr,                     //security attributes
+			 0,                            //0 is sentinel for use default stack size
+			 ThreadProcCPU0Filter,         //LPTHREAD_START_ROUTINE
+			 (LPVOID)NULL,                 // pass nothing into function
+			 NULL,                         // no creation flags (run thread immediately)
+			 &sg_ThreadFilterFace[0].m_ThreadID );
+	  }
+	  // SL END
    }
    else //otherwise call filtering function from the current process
    {
       FilterCubeMapMipChain(a_BaseFilterAngle, a_InitialMipAngle, a_MipAnglePerLevelScale, a_FilterType, 
-         a_FixupType, a_FixupWidth, a_bUseSolidAngle );
+         a_FixupType, a_FixupWidth, a_bUseSolidAngle
+		// SL BEGIN
+		,a_SpecularPower, a_bCosinePowerOnMipmapChain
+		// SL END
+		 );
    
    }
 
@@ -1967,8 +2130,9 @@ void CCubeMapProcessor::FlipOutputCubemapFaces(void)
 //--------------------------------------------------------------------------------------
 bool8 CCubeMapProcessor::IsFilterThreadActive(uint32 a_ThreadIdx)
 {
-   if( (m_bThreadInitialized[a_ThreadIdx] == FALSE) ||
-       (m_ThreadHandle[a_ThreadIdx] == NULL) 
+	// SL BEGIN
+   if( (sg_ThreadFilterFace[a_ThreadIdx].m_bThreadInitialized == FALSE) ||
+       (sg_ThreadFilterFace[a_ThreadIdx].m_ThreadHandle == NULL) 
        )
    {
       return FALSE;
@@ -1977,13 +2141,14 @@ bool8 CCubeMapProcessor::IsFilterThreadActive(uint32 a_ThreadIdx)
    {  //thread is initialized
       DWORD exitCode;
 
-      GetExitCodeThread(m_ThreadHandle[a_ThreadIdx], &exitCode );
+      GetExitCodeThread(sg_ThreadFilterFace[a_ThreadIdx].m_ThreadHandle, &exitCode );
 
       if( exitCode == CP_THREAD_STILL_ACTIVE )
       {
          return TRUE;
       }
    }
+   // SL END
    
    return FALSE;
 }
@@ -2123,26 +2288,29 @@ void CCubeMapProcessor::EstimateFilterThreadProgress(SFilterProgress *a_FilterPr
 //--------------------------------------------------------------------------------------
 WCHAR *CCubeMapProcessor::GetFilterProgressString(void)
 {
-   WCHAR threadProgressString[CP_MAX_FILTER_THREADS][CP_MAX_PROGRESS_STRING];
-   int32 i;
+   // SL BEGIN
+   static WCHAR threadProgressString[CP_MAX_PROGRESS_STRING];
 
-   for(i=0; i<m_NumFilterThreads; i++)
+   m_ProgressString[0] = '\0';
+
+   for(int32 i=0; i<m_NumFilterThreads; i++)
    {
       if(IsFilterThreadActive(i))
       {
          //set wait
          SetCursor(LoadCursor(NULL, IDC_WAIT ));
 
-         EstimateFilterThreadProgress(&(m_ThreadProgress[i]) );
+         EstimateFilterThreadProgress(&sg_ThreadFilterFace[i].m_ThreadProgress);
 
-         _snwprintf_s(threadProgressString[i],
+         _snwprintf_s(threadProgressString,
             CP_MAX_PROGRESS_STRING,
             CP_MAX_PROGRESS_STRING,
-            L"%5.2f%% Complete (Level %3d, Face %3d, Row %3d)", 
-            100.0f * m_ThreadProgress[i].m_FractionCompleted,
-            m_ThreadProgress[i].m_CurrentMipLevel, 
-            m_ThreadProgress[i].m_CurrentFace,
-            m_ThreadProgress[i].m_CurrentRow        
+            L"Thread %d: %5.2f%% Complete (Level %3d, Face %3d, Row %3d)\n", 
+			i,
+            100.0f * sg_ThreadFilterFace[i].m_ThreadProgress.m_FractionCompleted,
+            sg_ThreadFilterFace[i].m_ThreadProgress.m_CurrentMipLevel, 
+            sg_ThreadFilterFace[i].m_ThreadProgress.m_CurrentFace,
+            sg_ThreadFilterFace[i].m_ThreadProgress.m_CurrentRow        
             );
       }
       else
@@ -2150,30 +2318,15 @@ WCHAR *CCubeMapProcessor::GetFilterProgressString(void)
          //set arrow
          SetCursor(LoadCursor(NULL, IDC_ARROW ));
 
-         _snwprintf_s(threadProgressString[i], 
+		 _snwprintf_s(threadProgressString, 
             CP_MAX_PROGRESS_STRING,
             CP_MAX_PROGRESS_STRING,
-            L"Ready");   
+            L"Thread %d: Ready\n", i);   
       }
-   }
 
-   if(m_NumFilterThreads == 2)
-   {  //display information about both threads
-      _snwprintf_s(m_ProgressString, 
-         CP_MAX_PROGRESS_STRING,
-         CP_MAX_PROGRESS_STRING,
-         L"Thread0: %s \nThread1: %s", 
-         threadProgressString[0],
-         threadProgressString[1]);
+	  wcscat_s(m_ProgressString, CP_MAX_PROGRESS_STRING, threadProgressString);
    }
-   else
-   {  //only display information about one thread
-      _snwprintf_s(m_ProgressString, 
-         CP_MAX_PROGRESS_STRING,
-         CP_MAX_PROGRESS_STRING,
-         L"Thread 0: %s ", 
-         threadProgressString[0]);
-   }
+   // SL END
 
    return m_ProgressString;
 }
@@ -2205,3 +2358,246 @@ void CCubeMapProcessor::RefreshStatus(void)
 
 
 
+// SL BEGIN
+
+SThreadFilterFace* CCubeMapProcessor::sg_ThreadFilterFace;
+
+//Thread functions used to run filtering routines in the CPU0 process
+// note that these functions can not be member functions since thread initiation
+// must start from a global or static global function
+DWORD WINAPI ThreadProcFilterFace(LPVOID a_ThreadIdx)
+{
+    CBBoxInt32    filterExtents[6];   //bounding box per face to specify region to process
+                                      // note that pixels within these regions may be rejected 
+                                      // based on the
+	// Alias
+	SThreadFilterFace* tff = &CCubeMapProcessor::sg_ThreadFilterFace[(int32)a_ThreadIdx];
+		
+	// Thread will process one face
+	CP_ITYPE *texelPtr	= tff->m_DstCubeMap[tff->m_FaceIdx].m_ImgData;
+	int32 srcSize		= tff->m_SrcCubeMap[tff->m_FaceIdx].m_Width;
+	int32 dstSize		= tff->m_DstCubeMap[tff->m_FaceIdx].m_Width;
+
+	tff->m_ThreadProgress.m_CurrentRow = 0;
+
+	//iterate over dst cube map face texel
+	for(int32 v = 0; v < dstSize; v++)
+	{
+		tff->m_ThreadProgress.m_CurrentRow = v;
+
+		for(int32 u=0; u<dstSize; u++)
+		{
+			float32 centerTapDir[3];  //direction of center tap
+
+			//get center tap direction
+			TexelCoordToVect(tff->m_FaceIdx, (float32)u, (float32)v, dstSize, centerTapDir );
+
+			//clear old per-face filter extents
+			tff->m_cmProc->ClearFilterExtents(filterExtents);
+
+			//define per-face filter extents
+			tff->m_cmProc->DetermineFilterExtents(centerTapDir, srcSize, tff->m_filterSize, filterExtents );
+
+			//perform filtering of src faces using filter extents 
+			tff->m_cmProc->ProcessFilterExtents(centerTapDir, tff->m_dotProdThresh, filterExtents, tff->m_cmProc->m_NormCubeMap, tff->m_SrcCubeMap, texelPtr, tff->m_FilterType, tff->m_bUseSolidAngle, tff->m_SpecularPower);
+
+			texelPtr += tff->m_DstCubeMap[tff->m_FaceIdx].m_NumChannels;
+		}            
+	}
+
+	return(CP_THREAD_COMPLETED);
+}
+
+void CCubeMapProcessor::FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
+    float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex)
+{
+    CBBoxInt32    filterExtents[6];   //bounding box per face to specify region to process
+                                      // note that pixels within these regions may be rejected 
+                                      // based on the     
+
+    int32 srcSize = a_SrcCubeMap[0].m_Width;
+
+    float32 srcTexelAngle;
+    float32 dotProdThresh;
+    int32   filterSize;
+        
+    //angle about center tap to define filter cone
+    float32 filterAngle;
+
+    //min angle a src texel can cover (in degrees)
+    srcTexelAngle = (180.0f / (float32)CP_PI) * atan2f(1.0f, (float32)srcSize);  
+
+    //filter angle is 1/2 the cone angle
+    filterAngle = a_FilterConeAngle / 2.0f;
+
+    //ensure filter angle is larger than a texel
+    if(filterAngle < srcTexelAngle)
+    {
+        filterAngle = srcTexelAngle;    
+    }
+
+    //ensure filter cone is always smaller than the hemisphere
+    if(filterAngle > 90.0f)
+    {
+        filterAngle = 90.0f;
+    }
+
+    //the maximum number of texels in 1D the filter cone angle will cover
+    //  used to determine bounding box size for filter extents
+    filterSize = (int32)ceil(filterAngle / srcTexelAngle);   
+
+    //ensure conservative region always covers at least one texel
+    if(filterSize < 1)
+    {
+        filterSize = 1;
+    }
+
+    //dotProdThresh threshold based on cone angle to determine whether or not taps 
+    // reside within the cone angle
+    dotProdThresh = cosf( ((float32)CP_PI / 180.0f) * filterAngle );
+
+    //process required faces
+	SECURITY_ATTRIBUTES secAttr;
+
+	//thread security attributes for thread1
+	secAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+	secAttr.lpSecurityDescriptor = NULL;            //use same security descriptor as parent
+	secAttr.bInheritHandle = TRUE;                  //handle is inherited by new processes spawning from this one
+
+	int32 FaceIdx = 0;
+	INT NumAliveThread = 0;
+	bool8* CurrentThreadReady = new bool8[m_NumFilterThreads];
+
+	for (int32 i = 0; i < m_NumFilterThreads; ++i)
+	{
+		CurrentThreadReady[i] = true;
+	}
+
+	while (1)
+	{
+		// Scheduling is as follow:
+		// For each available hardware thread minus one (m_NumFilterThreads) we create a thread to process a cubemap face.
+		// When no more hardware thread are available, we wait that one finish its work (we sleep).
+		// when a hardware thread become available, a new thread is created to process the next not yet filtered face.
+		// TODO : the process can be improve by not createing/destroying thread each time. A better way will be to use GPU or GPGPU but it take too much time to implement it.
+		// Remark: As all face take the same work time we can start all hardawre thread together and wait them all instead of waiting the first available. The algorithm here
+		// can be good if we start to process mipmap face.
+		for (int32 ThreadIdx = 0; ThreadIdx < m_NumFilterThreads; ++ThreadIdx)
+		{
+			if (CurrentThreadReady[ThreadIdx] && (FaceIdx < 6))
+			{
+				//initialize thread parameter
+				sg_ThreadFilterFace[ThreadIdx].m_bThreadInitialized = TRUE;
+				sg_ThreadFilterFace[ThreadIdx].m_cmProc				= this;
+
+				sg_ThreadFilterFace[ThreadIdx].m_SrcCubeMap			= a_SrcCubeMap; 
+				sg_ThreadFilterFace[ThreadIdx].m_DstCubeMap			= a_DstCubeMap;
+				sg_ThreadFilterFace[ThreadIdx].m_FilterConeAngle	= a_FilterConeAngle;
+				sg_ThreadFilterFace[ThreadIdx].m_FilterType			= a_FilterType;
+				sg_ThreadFilterFace[ThreadIdx].m_bUseSolidAngle		= a_bUseSolidAngle; 
+				sg_ThreadFilterFace[ThreadIdx].m_FaceIdx			= FaceIdx;
+				sg_ThreadFilterFace[ThreadIdx].m_SpecularPower		= a_SpecularPower;
+				sg_ThreadFilterFace[ThreadIdx].m_dotProdThresh		= dotProdThresh;
+				sg_ThreadFilterFace[ThreadIdx].m_filterSize			= filterSize;
+
+				// thread progress
+				sg_ThreadFilterFace[ThreadIdx].m_ThreadProgress.m_CurrentMipLevel	= a_MipIndex;
+				sg_ThreadFilterFace[ThreadIdx].m_ThreadProgress.m_CurrentFace		= FaceIdx;
+				sg_ThreadFilterFace[ThreadIdx].m_ThreadProgress.m_StartFace			= FaceIdx; // unused
+				sg_ThreadFilterFace[ThreadIdx].m_ThreadProgress.m_EndFace			= FaceIdx; // unused
+
+				// Create thread
+				sg_ThreadFilterFace[ThreadIdx].m_ThreadHandle = CreateThread(	&secAttr,                     //security attributes
+																				0,                            //0 is sentinel for use default stack size
+																				ThreadProcFilterFace,         //LPTHREAD_START_ROUTINE
+																				(LPVOID)ThreadIdx,            // pass the thread index
+																				NULL,                         // no creation flags (run thread immediately)
+																				&sg_ThreadFilterFace[ThreadIdx].m_ThreadID );
+
+				CurrentThreadReady[ThreadIdx] = false;
+				FaceIdx++;
+				NumAliveThread++;
+			}
+			else if (!CurrentThreadReady[ThreadIdx] && !IsFilterThreadActive(ThreadIdx))
+			{
+				CurrentThreadReady[ThreadIdx] = true;
+				NumAliveThread--;
+			}
+		}
+
+		if (FaceIdx >= 6 && NumAliveThread == 0)
+		{
+			// Process is finished
+			break;
+		}
+		else
+		{
+			//free up this thread for other thread to complete
+			Sleep(100);
+		}
+	}
+
+	CP_SAFE_DELETE_ARRAY(CurrentThreadReady);
+}
+
+void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
+    int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain
+	)
+{
+	//Cone angle start (for generating subsequent mip levels)
+	float32 coneAngle = a_InitialMipAngle;
+	int32 Num = m_NumMipLevels; // Note that we need to filter the first level before generating mipmap
+								// So LevelIndex == 0 is base filtering hen LevelIndex > 0 is mipmap generation
+
+	for(int32 LevelIndex = 0; LevelIndex < Num; LevelIndex++)
+	{
+	   int32 FilterType = a_FilterType;
+
+       // In case of cosine power filter use cosine filter for generate mip level
+	   if (LevelIndex > 0 && a_FilterType == CP_FILTER_TYPE_COSINE_POWER)
+	   {
+		   FilterType = CP_FILTER_TYPE_COSINE;
+	   }
+
+		CImageSurface* SrcCubeImage = (LevelIndex == 0 ? m_InputSurface : m_OutputSurface[LevelIndex-1]);
+		CImageSurface* DstCubeImage = m_OutputSurface[LevelIndex];
+
+		float32 Angle;
+		
+		if (LevelIndex == 0)
+		{
+			Angle = a_BaseFilterAngle;
+		}
+		else
+		{
+			Angle = coneAngle;
+			coneAngle *= a_MipAnglePerLevelScale;
+		}
+
+		//Build filter lookup tables based on the source miplevel size
+		PrecomputeFilterLookupTables(FilterType, SrcCubeImage[0].m_Width, Angle);
+
+		// Use multithread only for large mipmap
+		if (SrcCubeImage[0].m_Width >= 64)
+		{
+			FilterCubeSurfacesMultithread(SrcCubeImage, DstCubeImage, Angle, FilterType, a_bUseSolidAngle, a_SpecularPower, LevelIndex);
+		}
+		else
+		{
+			//filter cube surfaces
+			FilterCubeSurfaces(SrcCubeImage, DstCubeImage, Angle, FilterType, a_bUseSolidAngle,
+								0,  //start at face 0 
+								5,  //end at face 5
+								0, //Main thread is processing
+								a_SpecularPower
+								); 
+
+		}
+
+		FixupCubeEdges(DstCubeImage, a_FixupType, a_FixupWidth);
+	}
+
+	m_Status = CP_STATUS_FILTER_COMPLETED;
+}
+
+// SL END

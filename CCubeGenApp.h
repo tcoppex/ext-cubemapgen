@@ -104,6 +104,10 @@ public:
    bool8 m_bCenterObject;              //center object
 
    bool8 m_bOutputPeriodicRefresh;     //whether or not to refresh output cubemap every so many frames
+   // SL BEGIN
+   bool8 m_bUseMultithread;
+   bool8 m_bCosinePowerOnMipmapChain;
+   // SL END
    int32 m_FramesSinceLastRefresh;     //number of frames since last cubemap refresh
 
    int32 m_SelectedCubeFace;           //selected cube map face
@@ -118,6 +122,10 @@ public:
    float32             m_MipInitialFilterAngle;
    float32             m_MipFilterAngleScale; 
    bool8               m_bUseSolidAngleWeighting;
+   // SL BEGIN
+   // Specular power will be used when cosinus power filter is set
+   uint32			   m_SpecularPower;
+   // SL END
 
    int32               m_EdgeFixupTech;
    bool8               m_bCubeEdgeFixup;
