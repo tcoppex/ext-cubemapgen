@@ -47,6 +47,7 @@ CCubeGenApp::CCubeGenApp(void)
    // SL BEGIN
    m_bUseMultithread = TRUE;
    m_bCosinePowerOnMipmapChain = FALSE;
+   m_bIrradianceCubemap = FALSE;
    // SL END
 
    //write mip level to alpha so the cube maps mip level can be determined by ps.2.0 or ps.2.b shaders
@@ -1857,7 +1858,7 @@ void CCubeGenApp::FilterCubeMap(void)
    //begin filtering, if one or more filtereing threads is enabled, initiate the filtering threads, and return 
    // from the function with the threads running in the background.
    m_CubeMapProcessor.InitiateFiltering(m_BaseFilterAngle, m_MipInitialFilterAngle, m_MipFilterAngleScale, 
-	  m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, m_SpecularPower, m_bUseMultithread, m_bCosinePowerOnMipmapChain);
+	  m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, m_SpecularPower, m_bUseMultithread, m_bCosinePowerOnMipmapChain, m_bIrradianceCubemap);
    // SL END
 
    m_FramesSinceLastRefresh = 0;

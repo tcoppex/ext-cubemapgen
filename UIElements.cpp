@@ -225,6 +225,7 @@ HANDLE                  g_ConsoleHandle;                 // Console handle
 #define IDC_SPECULAR_POWER_STATICTEXT			2101
 #define IDC_MULTITHREAD_CHECKBOX				2102
 #define IDC_COSINE_POWER_CHAIN_CHECKBOX			2103
+#define IDC_IRRADIANCE_CUBEMAP_CHECKBOX			2104
 // SL END
 
 //--------------------------------------------------------------------------------------
@@ -529,6 +530,7 @@ void ProcessCommandLineForHelpOptions(void)
 			// SL BEGIN
 			" -CosinePower define the specular power to use when Cosine power filtering is used.\n"
 			" -CosinePowerOnMipmapChain allow to specify that an automatic specular power will be assign to each mipmap based on initial specular power else apply a standard cosine filter for mipmap generation.\n"
+			" -IrradianceCubemap specify that the Base filtering is a diffuse convolution (like a cosinus filter with a Base angle of 180).\n"
 			// SL END
             " -writeMipLevelIntoAlpha  Encode the miplevel in the alpha channel. \n"
             " -importDegamma:[float=1.0]  Gamma of cube map to import. \n"
@@ -717,14 +719,18 @@ void ProcessCommandLineArguements(void)
          g_CubeGenApp.m_bUseSolidAngleWeighting = TRUE;
       }
       // SL BEGIN
-      else if( WCPrefixCmp(cmdArg, L"-CosinePower:", &suffixStr) )
+      else if( WCPrefixCmp(cmdArg, L"-CosinePower", &suffixStr) )
       {            
          g_CubeGenApp.m_SpecularPower = (uint32)_wtoi(suffixStr);
       }
-      else if( WCPrefixCmp(cmdArg, L"-CosinePowerOnMipmapChain:", &suffixStr) )
+      else if( WCPrefixCmp(cmdArg, L"-CosinePowerOnMipmapChain", &suffixStr) )
       {            
          g_CubeGenApp.m_bCosinePowerOnMipmapChain = TRUE;
       }
+	  else if ( WCPrefixCmp(cmdArg, L"-IrradianceCubemap", &suffixStr) )
+	  {
+		  g_CubeGenApp.m_bIrradianceCubemap = TRUE;
+	  }
      // SL END
       else if( WCPrefixCmp(cmdArg, L"-writeMipLevelIntoAlpha", &suffixStr) )
       {
@@ -1600,6 +1606,9 @@ void SetupGUI(void)
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_EDITBOX )->SetSpacing(UI_EDITBOX_SPACING);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_EDITBOX )->SetTextColor(UI_EDITBOX_TEXTCOLOR);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_EDITBOX )->SetCaretColor(UI_EDITBOX_TEXTCOLOR);
+   g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX, L"Irradiance cubemap", iX, iY += 20, 160, 16 );
+   g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX )->SetChecked(false);
+
    g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_COSINE_POWER_CHAIN_CHECKBOX, L"Cosine Power on mipchain", iX, iY += 20, 160, 16 );
    g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_COSINE_POWER_CHAIN_CHECKBOX )->SetChecked(false);
    // TEMP : Will be part of another feature not implemented yet
@@ -3420,7 +3429,12 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl )
       {
          g_CubeGenApp.m_bCosinePowerOnMipmapChain = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_COSINE_POWER_CHAIN_CHECKBOX )->GetChecked();
       }
-      break;	
+      break;
+	  case IDC_IRRADIANCE_CUBEMAP_CHECKBOX:
+   	  {
+		  g_CubeGenApp.m_bIrradianceCubemap = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX )->GetChecked();
+	  }
+	  break;
 	  // SL END
       case IDC_REFRESH_OUTPUT_CUBEMAP:
       {
@@ -3599,6 +3613,7 @@ void SetUIElementsUsingCurrentSettings(void)
    // SL BEGIN
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_MULTITHREAD_CHECKBOX)->SetChecked(g_CubeGenApp.m_bUseMultithread ? true:false );
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_COSINE_POWER_CHAIN_CHECKBOX)->SetChecked(g_CubeGenApp.m_bCosinePowerOnMipmapChain ? true:false );   
+   g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_IRRADIANCE_CUBEMAP_CHECKBOX)->SetChecked(g_CubeGenApp.m_bIrradianceCubemap ? true:false );      
    // SL END
 }
 

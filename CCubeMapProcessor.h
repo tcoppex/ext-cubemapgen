@@ -197,6 +197,7 @@ struct SThreadOptionsThread0
    // SL BEGIN
    uint32  m_SpecularPower;
    bool8   m_bCosinePowerOnMipmapChain;
+   bool8   m_bIrradianceCubemap;
    // SL END
 };
 
@@ -218,6 +219,7 @@ struct SThreadOptionsThread1
 	// SL BEGIN
 	uint32		  m_SpecularPower;
 	bool8		  m_bCosinePowerOnMipmapChain;
+	bool8		  m_bIrradianceCubemap;
 	// SL END
 };
 
@@ -396,7 +398,7 @@ public:
    void FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
       int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  	// SL BEGIN
-		, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain
+		, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain, bool8 a_bIrradianceCubemap
 		// SL END
 	  );
    void FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, float32 a_FilterConeAngle, 
@@ -407,12 +409,15 @@ public:
 	  );        
 
    // SL BEGIN
-	void FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain);
+   // To process an irradiance cubemap
+   void SHFilterCubeMap(CImageSurface *a_NormCubeMap, bool8 a_bUseSolidAngleWeighting);
 
-	void FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
+   void FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
+		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain, bool8 a_bIrradianceCubemap);
+
+   void FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
 		float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex);
-	// SL END
+   // SL END
 
 public:
    CCubeMapProcessor(void);
@@ -539,7 +544,7 @@ public:
    void InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
       int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  // SL BEGIN
-	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, bool8 a_bCosinePowerOnMipmapChain
+	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, bool8 a_bCosinePowerOnMipmapChain, bool8 a_bIrradianceCubemap
 	  // SL END
 	  );
 
