@@ -410,7 +410,7 @@ public:
 
    // SL BEGIN
    // To process an irradiance cubemap
-   void SHFilterCubeMap(CImageSurface *a_NormCubeMap, bool8 a_bUseSolidAngleWeighting);
+   void SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting);
 
    void FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
 		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain, bool8 a_bIrradianceCubemap);

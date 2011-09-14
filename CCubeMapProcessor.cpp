@@ -1616,7 +1616,7 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
    {
 	   // Note that we redo the normalization as in PrecomputeFilterLookupTables
 	   // Don't care for now because we should use Multithread approach
-	   SHFilterCubeMap(m_NormCubeMap, a_bUseSolidAngle);
+	   SHFilterCubeMap(a_bUseSolidAngle);
    }
    else
    {
@@ -2584,7 +2584,7 @@ void EvalSHBasis(const float32* dir, float64* res )
 	res[8] =  fC4 * ((dir[0] * dir[0]) - (dir[1] * dir[1]));
 }
 
-void CCubeMapProcessor::SHFilterCubeMap(CImageSurface *a_NormCubeMap, bool8 a_bUseSolidAngleWeighting)
+void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 {
 	CImageSurface* SrcCubeImage = m_InputSurface;
 	CImageSurface* DstCubeImage = m_OutputSurface[0];
@@ -2598,7 +2598,6 @@ void CCubeMapProcessor::SHFilterCubeMap(CImageSurface *a_NormCubeMap, bool8 a_bU
 	CP_ITYPE *dstCubeRowStartPtr;
 	CP_ITYPE *texelVect;
 
-	const int32 NormCubeMapNumChannels	= a_NormCubeMap[0].m_NumChannels;
 	const int32 SrcCubeMapNumChannels	= SrcCubeImage[0].m_NumChannels;
 	const int32 DstCubeMapNumChannels	= DstCubeImage[0].m_NumChannels;
 
@@ -2613,6 +2612,8 @@ void CCubeMapProcessor::SHFilterCubeMap(CImageSurface *a_NormCubeMap, bool8 a_bU
 
 	//Normalized vectors per cubeface and per-texel solid angle 
 	BuildNormalizerSolidAngleCubemap(m_InputSurface->m_Width, m_NormCubeMap);
+
+	const int32 NormCubeMapNumChannels = m_NormCubeMap[0].m_NumChannels; // This need to be init here after the generation of m_NormCubeMap
 
 	//This is a custom implementation of D3DXSHProjectCubeMap to avoid to deal with LPDIRECT3DSURFACE9 pointer
 	//Use Sh order 2 for a total of 9 coefficient as describe in http://www.cs.berkeley.edu/~ravir/papers/envmap/
@@ -2635,7 +2636,7 @@ void CCubeMapProcessor::SHFilterCubeMap(CImageSurface *a_NormCubeMap, bool8 a_bU
 	{
 		for (int32 y = 0; y < SrcSize; y++)
 		{
-			normCubeRowStartPtr = &a_NormCubeMap[iFaceIdx].m_ImgData[NormCubeMapNumChannels * (y * SrcSize)];
+			normCubeRowStartPtr = &m_NormCubeMap[iFaceIdx].m_ImgData[NormCubeMapNumChannels * (y * SrcSize)];
 			srcCubeRowStartPtr	= &SrcCubeImage[iFaceIdx].m_ImgData[SrcCubeMapNumChannels * (y * SrcSize)];
 
 			for (int32 x = 0; x < SrcSize; x++)
@@ -2698,7 +2699,7 @@ void CCubeMapProcessor::SHFilterCubeMap(CImageSurface *a_NormCubeMap, bool8 a_bU
 	{
 		for (int32 y = 0; y < DstSize; y++)
 		{
-			normCubeRowStartPtr = &a_NormCubeMap[iFaceIdx].m_ImgData[NormCubeMapNumChannels * (y * DstSize)];
+			normCubeRowStartPtr = &m_NormCubeMap[iFaceIdx].m_ImgData[NormCubeMapNumChannels * (y * DstSize)];
 			dstCubeRowStartPtr	= &DstCubeImage[iFaceIdx].m_ImgData[DstCubeMapNumChannels * (y * DstSize)];
 
 			for (int32 x = 0; x < DstSize; x++)
@@ -2740,7 +2741,7 @@ void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAng
 	   // If diffuse convolution is required, go through SH filtering for the base level
 	   if (LevelIndex == 0 && a_bIrradianceCubemap)
 	   {
-			SHFilterCubeMap(m_NormCubeMap, a_bUseSolidAngle);
+			SHFilterCubeMap(a_bUseSolidAngle);
 
 			FixupCubeEdges(m_OutputSurface[0], a_FixupType, a_FixupWidth);
 
