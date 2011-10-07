@@ -2722,6 +2722,10 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 				dstCubeRowStartPtr[(DstCubeMapNumChannels * x) + 0] = R;
 				dstCubeRowStartPtr[(DstCubeMapNumChannels * x) + 1] = G;
 				dstCubeRowStartPtr[(DstCubeMapNumChannels * x) + 2] = B;
+				if (DstCubeMapNumChannels > 3)
+				{
+					dstCubeRowStartPtr[(DstCubeMapNumChannels * x) + 3] = 1.0f;
+				}
 			}
 		}
 	}
