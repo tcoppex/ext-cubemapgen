@@ -2562,26 +2562,66 @@ void CCubeMapProcessor::FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMa
 	CP_SAFE_DELETE_ARRAY(CurrentThreadReady);
 }
 
+
+// SH order use for approximation of irradiance cubemap is 5, mean 5*5 equals 25 coefficients
+#define MAX_SH_ORDER 5
+#define NUM_SH_COEFFICIENT (MAX_SH_ORDER * MAX_SH_ORDER)
+
+// See Peter-Pike Sloan paper for these coefficients
+static float64 SHBandFactor[NUM_SH_COEFFICIENT] = { 1.0,
+												2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0,
+												1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0,
+												0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // The 4 band will be zeroed
+												- 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0, - 1.0 / 24.0};
+
 void EvalSHBasis(const float32* dir, float64* res )
 {
-	// See Perter-Pike sloan paper
-	static const float64 dSqrtPI = sqrt(CP_PI);
+	// Can be optimize by precomputing constant.
+	static const float64 SqrtPi = sqrt(CP_PI);
 
-	const float64 fC0 = 1.0/(2.0*dSqrtPI);
-	const float64 fC1 = (float64)sqrt(3.0)/(2.0*dSqrtPI);
-	const float64 fC2 = (float64)sqrt(15.0)/(2.0*dSqrtPI);
-	const float64 fC3 = (float64)sqrt(5.0)/(4.0*dSqrtPI);
-	const float64 fC4 = 0.5*fC2;
+	float64 xx = dir[0];
+	float64 yy = dir[1];
+	float64 zz = dir[2];
 
-	res[0] =  fC0;
-	res[1] = -fC1 * dir[1];
-	res[2] =  fC1 * dir[2];
-	res[3] = -fC1 * dir[0];
-	res[4] =  fC2 * dir[0] * dir[1];
-	res[5]=  -fC2 * dir[1] * dir[2];
-	res[6] = 3.0 * fC3 * (dir[2] * dir[2]) - fC3;
-	res[7] = -fC2 * dir[0] * dir[2];
-	res[8] =  fC4 * ((dir[0] * dir[0]) - (dir[1] * dir[1]));
+	// x[i] == pow(x, i), etc.
+	float64 x[MAX_SH_ORDER+1], y[MAX_SH_ORDER+1], z[MAX_SH_ORDER+1];
+	x[0] = y[0] = z[0] = 1.;
+	for (int32 i = 1; i < MAX_SH_ORDER+1; ++i)
+	{
+		x[i] = xx * x[i-1];
+		y[i] = yy * y[i-1];
+		z[i] = zz * z[i-1];
+	}
+
+	res[0]  = (1/(2.*SqrtPi));
+
+	res[1]  = -(sqrt(3/CP_PI)*yy)/2.;
+	res[2]  = (sqrt(3/CP_PI)*zz)/2.;
+	res[3]  = -(sqrt(3/CP_PI)*xx)/2.;
+
+	res[4]  = (sqrt(15/CP_PI)*xx*yy)/2.;
+	res[5]  = -(sqrt(15/CP_PI)*yy*zz)/2.;
+	res[6]  = (sqrt(5/CP_PI)*(-1 + 3*z[2]))/4.;
+	res[7]  = -(sqrt(15/CP_PI)*xx*zz)/2.;
+	res[8]  = sqrt(15/CP_PI)*(x[2] - y[2])/4.;
+
+	res[9]  = (sqrt(35/(2.*CP_PI))*(-3*x[2]*yy + y[3]))/4.;
+	res[10] = (sqrt(105/CP_PI)*xx*yy*zz)/2.;
+	res[11] = -(sqrt(21/(2.*CP_PI))*yy*(-1 + 5*z[2]))/4.;
+	res[12] = (sqrt(7/CP_PI)*zz*(-3 + 5*z[2]))/4.;
+	res[13] = -(sqrt(21/(2.*CP_PI))*xx*(-1 + 5*z[2]))/4.;
+	res[14] = (sqrt(105/CP_PI)*(x[2] - y[2])*zz)/4.;
+	res[15] = -(sqrt(35/(2.*CP_PI))*(x[3] - 3*xx*y[2]))/4.;
+
+	res[16] = (3*sqrt(35/CP_PI)*xx*yy*(x[2] - y[2]))/4.;
+	res[17] = (-3*sqrt(35/(2.*CP_PI))*(3*x[2]*yy - y[3])*zz)/4.;
+	res[18] = (3*sqrt(5/CP_PI)*xx*yy*(-1 + 7*z[2]))/4.;
+	res[19] = (-3*sqrt(5/(2.*CP_PI))*yy*zz*(-3 + 7*z[2]))/4.;
+	res[20] = (3*(3 - 30*z[2] + 35*z[4]))/(16.*SqrtPi);
+	res[21] = (-3*sqrt(5/(2.*CP_PI))*xx*zz*(-3 + 7*z[2]))/4.;
+	res[22] = (3*sqrt(5/CP_PI)*(x[2] - y[2])*(-1 + 7*z[2]))/8.;
+	res[23] = (-3*sqrt(35/(2.*CP_PI))*(x[3] - 3*xx*y[2])*zz)/4.;
+	res[24] = (3*sqrt(35/CP_PI)*(x[4] - 6*x[2]*y[2] + y[4]))/16.;
 }
 
 void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
@@ -2619,15 +2659,15 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 	//Use Sh order 2 for a total of 9 coefficient as describe in http://www.cs.berkeley.edu/~ravir/papers/envmap/
     //accumulators are 64-bit floats in order to have the precision needed 
     //over a summation of a large number of pixels 
-	float64 SHr[9];
-	float64 SHg[9];
-	float64 SHb[9];
-	float64 SHdir[9];
+	float64 SHr[NUM_SH_COEFFICIENT];
+	float64 SHg[NUM_SH_COEFFICIENT];
+	float64 SHb[NUM_SH_COEFFICIENT];
+	float64 SHdir[NUM_SH_COEFFICIENT];
 
-	memset(SHr, 0, 9 * sizeof(float64));
-	memset(SHg, 0, 9 * sizeof(float64));
-	memset(SHb, 0, 9 * sizeof(float64));
-	memset(SHdir, 0, 9 * sizeof(float64));
+	memset(SHr, 0, NUM_SH_COEFFICIENT * sizeof(float64));
+	memset(SHg, 0, NUM_SH_COEFFICIENT * sizeof(float64));
+	memset(SHb, 0, NUM_SH_COEFFICIENT * sizeof(float64));
+	memset(SHdir, 0, NUM_SH_COEFFICIENT * sizeof(float64));
 
 	float64 weightAccum = 0.0;
 	float64 weight = 0.0;
@@ -2660,7 +2700,7 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 				float64 G = srcCubeRowStartPtr[(SrcCubeMapNumChannels * x) + 1];
 				float64 B = srcCubeRowStartPtr[(SrcCubeMapNumChannels * x) + 2];
 
-				for (int32 i = 0; i < 9; i++)
+				for (int32 i = 0; i < NUM_SH_COEFFICIENT; i++)
 				{
 					SHr[i] += R * SHdir[i] * weight;
 					SHg[i] += G * SHdir[i] * weight;
@@ -2673,7 +2713,7 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 	}
 
 	//Normalization - 4.0 * CP_PI is the solid angle of a sphere
-	for (int32 i = 0; i < 9; ++i)
+	for (int32 i = 0; i < NUM_SH_COEFFICIENT; ++i)
 	{
 		SHr[i] *= 4.0 * CP_PI / weightAccum;
 		SHg[i] *= 4.0 * CP_PI / weightAccum;
@@ -2692,9 +2732,6 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 	//Normalized vectors per cubeface and per-texel solid angle 
 	BuildNormalizerSolidAngleCubemap(DstCubeImage->m_Width, m_NormCubeMap);
 
-	// See Peter-Pike Sloan paper for these coeeficeint
-	static float64 BandFactor[9] = { 1.0, 2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0, 1.0f / 4.0, 1.0f / 4.0, 1.0f / 4.0, 1.0f / 4.0, 1.0f / 4.0 };
-
 	for (int32 iFaceIdx = 0; iFaceIdx < 6; iFaceIdx++)
 	{
 		for (int32 y = 0; y < DstSize; y++)
@@ -2712,11 +2749,11 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 				// get color value
 				CP_ITYPE R = 0.0f, G = 0.0f, B = 0.0f;
 				
-				for (int32 i = 0; i < 9; ++i)
+				for (int32 i = 0; i < NUM_SH_COEFFICIENT; ++i)
 				{
-					R += (CP_ITYPE)(SHr[i] * SHdir[i] * BandFactor[i]);
-					G += (CP_ITYPE)(SHg[i] * SHdir[i] * BandFactor[i]);
-					B += (CP_ITYPE)(SHb[i] * SHdir[i] * BandFactor[i]);
+					R += (CP_ITYPE)(SHr[i] * SHdir[i] * SHBandFactor[i]);
+					G += (CP_ITYPE)(SHg[i] * SHdir[i] * SHBandFactor[i]);
+					B += (CP_ITYPE)(SHb[i] * SHdir[i] * SHBandFactor[i]);
 				}
 
 				dstCubeRowStartPtr[(DstCubeMapNumChannels * x) + 0] = R;
