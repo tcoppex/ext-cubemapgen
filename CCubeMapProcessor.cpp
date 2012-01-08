@@ -359,6 +359,9 @@ CP_ITYPE *GetCubeMapTexelPtr(float32 *a_XYZ, CImageSurface *a_Surface)
 //   computed using the sum of the interior angles - PI.
 //
 //--------------------------------------------------------------------------------------
+// SL BEGIN
+// Replace the calcul of the solidAngle by a better approximation.
+#if 0
 float32 TexelCoordSolidAngle(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_Size)
 {
    float32 cornerVect[4][3];
@@ -395,7 +398,39 @@ float32 TexelCoordSolidAngle(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_
 
    return texelArea;
 }
+#else
 
+/** Original code from Ignacio Castaño
+* This formula is from Manne Öhrström's thesis.
+* Take two coordiantes in the range [-1, 1] that define a portion of a
+* cube face and return the area of the projection of that portion on the
+* surface of the sphere.
+**/
+
+static float32 AreaElement( float32 x, float32 y )
+{
+	return atan2(x * y, sqrt(x * x + y * y + 1));
+}
+
+float32 TexelCoordSolidAngle(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_Size)
+{
+   //scale up to [-1, 1] range (inclusive)
+   float32 U = (2.0f * ((float32)a_U + 0.5f) / (float32)a_Size ) - 1.0f;
+   float32 V = (2.0f * ((float32)a_V + 0.5f) / (float32)a_Size ) - 1.0f;
+
+   float32 InvResolution = 1.0f / a_Size;
+
+	// U and V are the -1..1 texture coordinate on the current face.
+	// Get projected area for this texel
+	float32 x0 = U - InvResolution;
+	float32 y0 = V - InvResolution;
+	float32 x1 = U + InvResolution;
+	float32 y1 = V + InvResolution;
+	float32 SolidAngle = AreaElement(x0, y0) - AreaElement(x0, y1) - AreaElement(x1, y0) + AreaElement(x1, y1);
+
+	return SolidAngle;
+}
+#endif // SL END
 
 
 //--------------------------------------------------------------------------------------
@@ -2712,7 +2747,8 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 		}
 	}
 
-	//Normalization - 4.0 * CP_PI is the solid angle of a sphere
+	//Normalization - The sum of solid angle should be equal to the solid angle of the sphere (4 PI), so
+	// normalize in order our weightAccum exactly match 4 PI.
 	for (int32 i = 0; i < NUM_SH_COEFFICIENT; ++i)
 	{
 		SHr[i] *= 4.0 * CP_PI / weightAccum;
