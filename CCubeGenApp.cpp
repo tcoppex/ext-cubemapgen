@@ -46,7 +46,6 @@ CCubeGenApp::CCubeGenApp(void)
 
    // SL BEGIN
    m_bUseMultithread = TRUE;
-   m_bCosinePowerOnMipmapChain = FALSE;
    m_bIrradianceCubemap = FALSE;
    // SL END
 
@@ -64,6 +63,7 @@ CCubeGenApp::CCubeGenApp(void)
    m_bUseSolidAngleWeighting = TRUE;
    // SL BEGIN
    m_SpecularPower = 2048; // Default to 2048 because it is a fast computation when you swtich to cosinus power filter
+   m_SpecularPowerDropPerMip = 0.25;
    // SL END
 
    m_EdgeFixupTech = CP_FIXUP_PULL_HERMITE;
@@ -1858,7 +1858,7 @@ void CCubeGenApp::FilterCubeMap(void)
    //begin filtering, if one or more filtereing threads is enabled, initiate the filtering threads, and return 
    // from the function with the threads running in the background.
    m_CubeMapProcessor.InitiateFiltering(m_BaseFilterAngle, m_MipInitialFilterAngle, m_MipFilterAngleScale, 
-	  m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, m_SpecularPower, m_bUseMultithread, m_bCosinePowerOnMipmapChain, m_bIrradianceCubemap);
+	  m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, m_SpecularPower, m_bUseMultithread, m_SpecularPowerDropPerMip, m_bIrradianceCubemap);
    // SL END
 
    m_FramesSinceLastRefresh = 0;

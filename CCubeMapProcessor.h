@@ -196,7 +196,7 @@ struct SThreadOptionsThread0
    bool8   m_bUseSolidAngle;
    // SL BEGIN
    uint32  m_SpecularPower;
-   bool8   m_bCosinePowerOnMipmapChain;
+   float32 m_CosinePowerDropPerMip;
    bool8   m_bIrradianceCubemap;
    // SL END
 };
@@ -218,7 +218,7 @@ struct SThreadOptionsThread1
    int32          m_ThreadIdx; 
 	// SL BEGIN
 	uint32		  m_SpecularPower;
-	bool8		  m_bCosinePowerOnMipmapChain;
+	float32		  m_CosinePowerDropPerMip;
 	bool8		  m_bIrradianceCubemap;
 	// SL END
 };
@@ -398,7 +398,7 @@ public:
    void FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
       int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  	// SL BEGIN
-		, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain, bool8 a_bIrradianceCubemap
+		, uint32 a_SpecularPower, float32 a_bSpecularPowerDropPerMip, bool8 a_bIrradianceCubemap
 		// SL END
 	  );
    void FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, float32 a_FilterConeAngle, 
@@ -413,7 +413,7 @@ public:
    void SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting);
 
    void FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, bool8 a_bCosinePowerOnMipmapChain, bool8 a_bIrradianceCubemap);
+		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, float32 a_SpecularPowerDropPerMip, bool8 a_bIrradianceCubemap);
 
    void FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
 		float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex);
@@ -544,7 +544,7 @@ public:
    void InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
       int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  // SL BEGIN
-	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, bool8 a_bCosinePowerOnMipmapChain, bool8 a_bIrradianceCubemap
+	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap
 	  // SL END
 	  );
 
