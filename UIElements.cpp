@@ -227,6 +227,7 @@ HANDLE                  g_ConsoleHandle;                 // Console handle
 #define IDC_IRRADIANCE_CUBEMAP_CHECKBOX			2104
 #define IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX	2105
 #define IDC_SPECULAR_POWER_MIP_DROP_STATICTEXT	2106
+#define IDC_PHONG_BRDF_CHECKBOX					2107
 // SL END
 
 //--------------------------------------------------------------------------------------
@@ -532,6 +533,7 @@ void ProcessCommandLineForHelpOptions(void)
 			" -CosinePower define the specular power to use when Cosine power filtering is used.\n"
 			" -CosinePowerDropPerMip allow to specify the specular power scale to generate successive cubemap miplevels .\n"
 			" -IrradianceCubemap specify that the Base filtering is a diffuse convolution (like a cosinus filter with a Base angle of 180).\n"
+			" -PhongBRDF specify if the Cosine power filtering is for a phong lighting model or a phong BRDF"
 			// SL END
             " -writeMipLevelIntoAlpha  Encode the miplevel in the alpha channel. \n"
             " -importDegamma:[float=1.0]  Gamma of cube map to import. \n"
@@ -731,6 +733,10 @@ void ProcessCommandLineArguements(void)
 	  else if ( WCPrefixCmp(cmdArg, L"-IrradianceCubemap", &suffixStr) )
 	  {
 		  g_CubeGenApp.m_bIrradianceCubemap = TRUE;
+	  }
+	  else if ( WCPrefixCmp(cmdArg, L"-PhongBRDF", &suffixStr) )
+	  {
+		  g_CubeGenApp.m_bPhongBRDF = TRUE;
 	  }
      // SL END
       else if( WCPrefixCmp(cmdArg, L"-writeMipLevelIntoAlpha", &suffixStr) )
@@ -1615,6 +1621,8 @@ void SetupGUI(void)
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX )->SetCaretColor(UI_EDITBOX_TEXTCOLOR);
    g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX, L"Irradiance cubemap", iX, iY += 20, 160, 16 );
    g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX )->SetChecked(false);
+   g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_PHONG_BRDF_CHECKBOX, L"Phong BRDF", iX, iY += 20, 160, 16 );
+   g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_PHONG_BRDF_CHECKBOX )->SetChecked(false);   
    iY += 4;
    // SL END
 
@@ -3424,6 +3432,11 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl )
 		  g_CubeGenApp.m_bIrradianceCubemap = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX )->GetChecked();
 	  }
 	  break;
+	  case IDC_PHONG_BRDF_CHECKBOX:
+   	  {
+		  g_CubeGenApp.m_bPhongBRDF = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_PHONG_BRDF_CHECKBOX )->GetChecked();
+	  }
+	  break;
 	  // SL END
       case IDC_REFRESH_OUTPUT_CUBEMAP:
       {
@@ -3605,6 +3618,7 @@ void SetUIElementsUsingCurrentSettings(void)
    // SL BEGIN
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_MULTITHREAD_CHECKBOX)->SetChecked(g_CubeGenApp.m_bUseMultithread ? true:false );
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_IRRADIANCE_CUBEMAP_CHECKBOX)->SetChecked(g_CubeGenApp.m_bIrradianceCubemap ? true:false );      
+   g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_PHONG_BRDF_CHECKBOX)->SetChecked(g_CubeGenApp.m_bPhongBRDF ? true:false );
    // SL END
 }
 

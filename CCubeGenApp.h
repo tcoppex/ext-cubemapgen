@@ -107,6 +107,7 @@ public:
    // SL BEGIN
    bool8 m_bUseMultithread;
    bool8 m_bIrradianceCubemap;
+   bool8 m_bPhongBRDF;
    // SL END
    int32 m_FramesSinceLastRefresh;     //number of frames since last cubemap refresh
 

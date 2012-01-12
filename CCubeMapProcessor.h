@@ -169,6 +169,7 @@ struct SThreadFilterFace
 	int32			m_FilterType;
 	int32			m_FaceIdx; 
 	uint32		    m_SpecularPower;
+	bool8		    m_bPhongBRDF;
 	float32			m_dotProdThresh;
 	int32			m_filterSize;
 
@@ -198,6 +199,7 @@ struct SThreadOptionsThread0
    uint32  m_SpecularPower;
    float32 m_CosinePowerDropPerMip;
    bool8   m_bIrradianceCubemap;
+   bool8   m_bPhongBRDF;
    // SL END
 };
 
@@ -220,6 +222,7 @@ struct SThreadOptionsThread1
 	uint32		  m_SpecularPower;
 	float32		  m_CosinePowerDropPerMip;
 	bool8		  m_bIrradianceCubemap;
+	bool8		  m_bPhongBRDF;
 	// SL END
 };
 
@@ -335,6 +338,7 @@ public:
       bool8 a_bUseSolidAngle
 	  // SL BEGIN
 	  , uint32 a_SpecularPower
+	  ,bool8 a_bPhongBRDF
 	  // SL END
 	  );
 
@@ -398,13 +402,14 @@ public:
    void FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
       int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  	// SL BEGIN
-		, uint32 a_SpecularPower, float32 a_bSpecularPowerDropPerMip, bool8 a_bIrradianceCubemap
+		, uint32 a_SpecularPower, float32 a_bSpecularPowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF
 		// SL END
 	  );
    void FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, float32 a_FilterConeAngle, 
       int32 a_FilterType, bool8 a_bUseSolidAngle, int32 a_FaceIdxStart, int32 a_FaceIdxEnd, int32 aThreadIdx
 	  	// SL BEGIN
 		, uint32 a_SpecularPower
+		,bool8 a_bPhongBRDF
 		// SL END
 	  );        
 
@@ -413,10 +418,10 @@ public:
    void SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting);
 
    void FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, float32 a_SpecularPowerDropPerMip, bool8 a_bIrradianceCubemap);
+		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, float32 a_SpecularPowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF);
 
    void FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
-		float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex);
+		float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex, bool8 a_bPhongBRDF);
    // SL END
 
 public:
@@ -544,7 +549,7 @@ public:
    void InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
       int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  // SL BEGIN
-	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap
+	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF
 	  // SL END
 	  );
 
