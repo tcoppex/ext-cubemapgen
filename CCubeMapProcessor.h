@@ -108,6 +108,16 @@
 #define CP_FIXUP_PULL_HERMITE    2
 #define CP_FIXUP_AVERAGE_LINEAR  3
 #define CP_FIXUP_AVERAGE_HERMITE 4
+// SL BEGIN
+#define CP_FIXUP_BENT			 5
+#define CP_FIXUP_WARP			 6
+
+// Lighting model
+#define CP_LIGHTINGMODEL_PHONG		0
+#define CP_LIGHTINGMODEL_PHONG_BRDF	1
+#define CP_LIGHTINGMODEL_BLINN		2
+#define CP_LIGHTINGMODEL_BLINN_BRDF	3
+// SL END
 
 
 // Max potential cubemap size is limited to 65k (2^16 texels) on a side
@@ -169,9 +179,10 @@ struct SThreadFilterFace
 	int32			m_FilterType;
 	int32			m_FaceIdx; 
 	uint32		    m_SpecularPower;
-	bool8		    m_bPhongBRDF;
+	int32		    m_LightingModel;
 	float32			m_dotProdThresh;
 	int32			m_filterSize;
+	int32			m_FixupType;
 
 	HANDLE			m_ThreadHandle;
 	DWORD			m_ThreadID;
@@ -199,7 +210,7 @@ struct SThreadOptionsThread0
    uint32  m_SpecularPower;
    float32 m_CosinePowerDropPerMip;
    bool8   m_bIrradianceCubemap;
-   bool8   m_bPhongBRDF;
+   int32   m_LightingModel;
    // SL END
 };
 
@@ -222,7 +233,8 @@ struct SThreadOptionsThread1
 	uint32		  m_SpecularPower;
 	float32		  m_CosinePowerDropPerMip;
 	bool8		  m_bIrradianceCubemap;
-	bool8		  m_bPhongBRDF;
+	int32		  m_LightingModel;
+	int32		  m_FixupType;
 	// SL END
 };
 
@@ -278,7 +290,9 @@ public:
    // a_Surface      [out]  Pointer to array of 6 CImageSurfaces where normalizer cube faces will be stored
    //                   
    //==========================================================================================================
-   void BuildNormalizerCubemap(int32 a_Size, CImageSurface *a_Surface );
+   // SL BEGIN
+   void BuildNormalizerCubemap(int32 a_Size, CImageSurface *a_Surface, int32 a_FixupType);
+   // SL END
 
    //==========================================================================================================
    //void BuildNormalizerSolidAngleCubemap(int32 a_Size, CImageSurface *a_Surface );
@@ -290,7 +304,9 @@ public:
    // a_Surface      [out]  Pointer to array of 6 CImageSurfaces where normalizer cube faces will be stored
    //
    //==========================================================================================================
-   void BuildNormalizerSolidAngleCubemap(int32 a_Size, CImageSurface *a_Surface );
+   // SL BEGIN
+   void BuildNormalizerSolidAngleCubemap(int32 a_Size, CImageSurface *a_Surface, int32 a_FixupType);
+   // SL END
 
    //==========================================================================================================
    //Clears filter extent bounding boxes for each face of the cubemap
@@ -338,7 +354,7 @@ public:
       bool8 a_bUseSolidAngle
 	  // SL BEGIN
 	  , uint32 a_SpecularPower
-	  ,bool8 a_bPhongBRDF
+	  ,int32 a_LightingModel
 	  // SL END
 	  );
 
@@ -350,7 +366,7 @@ public:
    //a_CubeMap       [in/out] Array of 6 images comprising cubemap miplevel to apply edge fixup to.
    //a_FixupType     [in]     Specifies the technique used for edge fixup.  Choose one of the following, 
    //                         CP_FIXUP_NONE, CP_FIXUP_PULL_LINEAR, CP_FIXUP_PULL_HERMITE, CP_FIXUP_AVERAGE_LINEAR, 
-   //                         CP_FIXUP_AVERAGE_HERMITE 
+   //                         CP_FIXUP_AVERAGE_HERMITE, CP_FIXUP_BENT, CP_FIXUP_WARP
    //a_FixupWidth    [in]     Fixup width in texels
    //
    //==========================================================================================================
@@ -381,7 +397,9 @@ public:
    //a_SrcCubeMapWidth     [in]     source cubemap size
    //a_FilterConeAngle     [in]     Filtering half cone angle
    //==========================================================================================================
-   void PrecomputeFilterLookupTables(uint32 a_FilterType, int32 a_SrcCubeMapWidth, float32 a_FilterConeAngle);
+   // SL BEGIN
+   void PrecomputeFilterLookupTables(uint32 a_FilterType, int32 a_SrcCubeMapWidth, float32 a_FilterConeAngle, int32 a_FixupType);
+   // SL END
 
    //==========================================================================================================
    //void EstimateFilterThreadProgress(SFilterProgress *a_FilterProgress);
@@ -402,26 +420,27 @@ public:
    void FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
       int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  	// SL BEGIN
-		, uint32 a_SpecularPower, float32 a_bSpecularPowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF
+		, uint32 a_SpecularPower, float32 a_bSpecularPowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel
 		// SL END
 	  );
    void FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, float32 a_FilterConeAngle, 
       int32 a_FilterType, bool8 a_bUseSolidAngle, int32 a_FaceIdxStart, int32 a_FaceIdxEnd, int32 aThreadIdx
 	  	// SL BEGIN
 		, uint32 a_SpecularPower
-		,bool8 a_bPhongBRDF
+		,int32 a_LightingModel
+		,int32 a_FixupType
 		// SL END
 	  );        
 
    // SL BEGIN
    // To process an irradiance cubemap
-   void SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting);
+   void SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting, int32 a_FixupType);
 
    void FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, float32 a_SpecularPowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF);
+		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, float32 a_SpecularPowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel);
 
    void FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
-		float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex, bool8 a_bPhongBRDF);
+		float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex, int32 a_LightingModel, int32 a_FixupType);
    // SL END
 
 public:
@@ -541,7 +560,7 @@ public:
    //                                  CP_FILTER_TYPE_COSINE, CP_FILTER_TYPE_ANGULAR_GAUSSIAN
    //  a_FixupType                [in] Specifies the technique used for edge fixup.  Choose one of the following, 
    //                                  CP_FIXUP_NONE, CP_FIXUP_PULL_LINEAR, CP_FIXUP_PULL_HERMITE, 
-   //                                  CP_FIXUP_AVERAGE_LINEAR, CP_FIXUP_AVERAGE_HERMITE 
+   //                                  CP_FIXUP_AVERAGE_LINEAR, CP_FIXUP_AVERAGE_HERMITE, CP_FIXUP_BENT, CP_FIXUP_WARP
    //  a_FixupWidth               [in] Width in texels of the fixup region.
    //  a_bUseSolidAngle           [in] Set this to true in order to incorporate the solid angle subtended 
    //                                  each texel in the filter kernel in the filtering.
@@ -549,7 +568,7 @@ public:
    void InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
       int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  // SL BEGIN
-	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF
+	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel
 	  // SL END
 	  );
 

@@ -31,7 +31,7 @@ DWORD WINAPI ThreadProcCPU0Filter(LPVOID a_NothingToPassToThisFunction)
 	  ,sg_FilterOptionsCPU0.m_SpecularPower
 	  ,sg_FilterOptionsCPU0.m_CosinePowerDropPerMip	  
 	  ,sg_FilterOptionsCPU0.m_bIrradianceCubemap
-	  ,sg_FilterOptionsCPU0.m_bPhongBRDF	  
+	  ,sg_FilterOptionsCPU0.m_LightingModel	  
 	  // SL END
   );
 
@@ -54,7 +54,7 @@ DWORD WINAPI ThreadProcCPU0FilterMultithread(LPVOID a_NothingToPassToThisFunctio
 	  sg_FilterOptionsCPU0.m_SpecularPower,
 	  sg_FilterOptionsCPU0.m_CosinePowerDropPerMip,
 	  sg_FilterOptionsCPU0.m_bIrradianceCubemap,
-	  sg_FilterOptionsCPU0.m_bPhongBRDF
+	  sg_FilterOptionsCPU0.m_LightingModel
 	  );
 
    return(CP_THREAD_COMPLETED);
@@ -84,7 +84,8 @@ DWORD WINAPI ThreadProcCPU1Filter(LPVOID a_NothingToPassToThisFunction)
       sg_FilterOptionsCPU1.m_ThreadIdx 
 	  // SL BEGIN
 	  ,sg_FilterOptionsCPU1.m_SpecularPower
-	  ,sg_FilterOptionsCPU1.m_bPhongBRDF
+	  ,sg_FilterOptionsCPU1.m_LightingModel
+	  ,sg_FilterOptionsCPU1.m_FixupType
 	  // SL END
 	  ); 
       
@@ -233,37 +234,154 @@ void CPFatalError(WCHAR *a_Msg)
    exit(EM_FATAL_ERROR);
 }
 
+// SL BEGIN
+void slerp(float32* res, float32* a, float32* b, float32 t)
+{
+	float32 angle = acosf(VM_DOTPROD3(a, b));
+
+	if (0.0f == angle)
+	{
+		res[0] = a[0];
+		res[1] = a[1];
+		res[2] = a[2];
+	}
+	else if (CP_PI == angle)
+	{
+		// Can't recovert!
+		res[0] = 0;
+		res[1] = 0;
+		res[2] = 0;
+	}
+	else
+	{
+		res[0] = (sinf((1.0-t)*angle)/sinf(angle))*a[0] + (sinf(t*angle)/sinf(angle))*b[0];
+		res[1] = (sinf((1.0-t)*angle)/sinf(angle))*a[1] + (sinf(t*angle)/sinf(angle))*b[1];
+		res[2] = (sinf((1.0-t)*angle)/sinf(angle))*a[2] + (sinf(t*angle)/sinf(angle))*b[2];
+	}
+}
+
+#define LERP(A, B, FACTOR) ( (A) + (FACTOR)*((B) - (A)) )	
+// SL END
 
 //--------------------------------------------------------------------------------------
 // Convert cubemap face texel coordinates and face idx to 3D vector
 // note the U and V coords are integer coords and range from 0 to size-1
 //  this routine can be used to generate a normalizer cube map
 //--------------------------------------------------------------------------------------
-void TexelCoordToVect(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_Size, float32 *a_XYZ)
+// SL BEGIN
+void TexelCoordToVect(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_Size, float32 *a_XYZ, int32 a_FixupType)
 {
-   float32 nvcU, nvcV;
-   float32 tempVec[3];
+	float32 nvcU, nvcV;
+	float32 tempVec[3];
 
-   //scale up to [-1, 1] range (inclusive)
-   // SL BEGIN
-   // offset by 0.5 to point to texel center.
-   nvcU = (2.0f * ((float32)a_U + 0.5f) / (float32)a_Size ) - 1.0f;
-   nvcV = (2.0f * ((float32)a_V + 0.5f) / (float32)a_Size ) - 1.0f;
-   // SL END
+	// Change from original AMD code
+	// transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
+	// + 0.5f is for texel center addressing
+	nvcU = (2.0f * ((float32)a_U + 0.5f) / (float32)a_Size ) - 1.0f;
+	nvcV = (2.0f * ((float32)a_V + 0.5f) / (float32)a_Size ) - 1.0f;
    
-   //generate x,y,z vector (xform 2d NVC coord to 3D vector)
-   //U contribution
-   VM_SCALE3(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_UDIR], nvcU);    
-   //V contribution
-   VM_SCALE3(tempVec, sgFace2DMapping[a_FaceIdx][CP_VDIR], nvcV);
-   VM_ADD3(a_XYZ, tempVec, a_XYZ);
-   //add face axis
-   VM_ADD3(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_FACEAXIS], a_XYZ);
+	if (a_FixupType == CP_FIXUP_WARP && a_Size > 1)
+	{
+		// Code from Nvtt : http://code.google.com/p/nvidia-texture-tools/source/browse/trunk/src/nvtt/CubeSurface.cpp
+		float32 a = powf(float32(a_Size), 2.0f) / powf(float32(a_Size - 1), 3.0f);
+		nvcU = a * powf(nvcU, 3) + nvcU;
+		nvcV = a * powf(nvcV, 3) + nvcV;
 
-   //normalize vector
-   VM_NORM3(a_XYZ, a_XYZ);
+		// Get current vector
+		//generate x,y,z vector (xform 2d NVC coord to 3D vector)
+		//U contribution
+		VM_SCALE3(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_UDIR], nvcU);    
+		//V contribution
+		VM_SCALE3(tempVec, sgFace2DMapping[a_FaceIdx][CP_VDIR], nvcV);
+		VM_ADD3(a_XYZ, tempVec, a_XYZ);
+		//add face axis
+		VM_ADD3(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_FACEAXIS], a_XYZ);
+		//normalize vector
+		VM_NORM3(a_XYZ, a_XYZ);
+	}
+	else if (a_FixupType == CP_FIXUP_BENT && a_Size > 1)
+	{
+		// Method following description of Physically based rendering slides from CEDEC2011 of TriAce
+
+		// Get vector at edge
+		float32 EdgeNormalU[3];
+		float32 EdgeNormalV[3];
+		float32 EdgeNormal[3];
+		float32 EdgeNormalMinusOne[3];
+
+		// Recover vector at edge
+		//U contribution
+		VM_SCALE3(EdgeNormalU, sgFace2DMapping[a_FaceIdx][CP_UDIR], nvcU < 0.0 ? -1.0f : 1.0f);    
+		//V contribution
+		VM_SCALE3(EdgeNormalV, sgFace2DMapping[a_FaceIdx][CP_VDIR], nvcV < 0.0 ? -1.0f : 1.0f);
+		VM_ADD3(EdgeNormal, EdgeNormalV, EdgeNormalU);
+		//add face axis
+		VM_ADD3(EdgeNormal, sgFace2DMapping[a_FaceIdx][CP_FACEAXIS], EdgeNormal);
+		//normalize vector
+		VM_NORM3(EdgeNormal, EdgeNormal);
+
+		// Get vector at (edge - 1)
+		float32 nvcUEdgeMinus1 = (2.0f * ((float32)(nvcU < 0.0f ? 0 : a_Size-1) + 0.5f) / (float32)a_Size ) - 1.0f;
+		float32 nvcVEdgeMinus1 = (2.0f * ((float32)(nvcV < 0.0f ? 0 : a_Size-1) + 0.5f) / (float32)a_Size ) - 1.0f;
+
+		// Recover vector at (edge - 1)
+		//U contribution
+		VM_SCALE3(EdgeNormalU, sgFace2DMapping[a_FaceIdx][CP_UDIR], nvcUEdgeMinus1);    
+		//V contribution
+		VM_SCALE3(EdgeNormalV, sgFace2DMapping[a_FaceIdx][CP_VDIR], nvcVEdgeMinus1);
+		VM_ADD3(EdgeNormalMinusOne, EdgeNormalV, EdgeNormalU);
+		//add face axis
+		VM_ADD3(EdgeNormalMinusOne, sgFace2DMapping[a_FaceIdx][CP_FACEAXIS], EdgeNormalMinusOne);
+		//normalize vector
+		VM_NORM3(EdgeNormalMinusOne, EdgeNormalMinusOne);
+
+		// Get angle between the two vector (which is 50% of the two vector presented in the TriAce slide)
+		float32 AngleNormalEdge = acosf(VM_DOTPROD3(EdgeNormal, EdgeNormalMinusOne));
+		
+		// Here we assume that high resolution required less offset than small resolution (TriAce based this on blur radius and custom value) 
+		// Start to increase from 50% to 100% target angle from 128x128x6 to 1x1x6
+		float32 NumLevel = (logf(min(a_Size, 128))  / logf(2)) - 1;
+		AngleNormalEdge = LERP(0.5 * AngleNormalEdge, AngleNormalEdge, 1.0f - (NumLevel/6) );
+
+		float32 factorU = abs((2.0f * ((float32)a_U) / (float32)(a_Size - 1) ) - 1.0f);
+		float32 factorV = abs((2.0f * ((float32)a_V) / (float32)(a_Size - 1) ) - 1.0f);
+		AngleNormalEdge = LERP(0.0f, AngleNormalEdge, max(factorU, factorV) );
+
+		// Get current vector
+		//generate x,y,z vector (xform 2d NVC coord to 3D vector)
+		//U contribution
+		VM_SCALE3(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_UDIR], nvcU);    
+		//V contribution
+		VM_SCALE3(tempVec, sgFace2DMapping[a_FaceIdx][CP_VDIR], nvcV);
+		VM_ADD3(a_XYZ, tempVec, a_XYZ);
+		//add face axis
+		VM_ADD3(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_FACEAXIS], a_XYZ);
+		//normalize vector
+		VM_NORM3(a_XYZ, a_XYZ);
+
+		float32 RadiantAngle = AngleNormalEdge;
+		// Get angle between face normal and current normal. Used to push the normal away from face normal.
+		float32 AngleFaceVector = acosf(VM_DOTPROD3(sgFace2DMapping[a_FaceIdx][CP_FACEAXIS], a_XYZ));
+
+		// Push the normal away from face normal by an angle of RadiantAngle
+		slerp(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_FACEAXIS], a_XYZ, 1.0f + RadiantAngle / AngleFaceVector);
+	}
+	else
+	{
+		//generate x,y,z vector (xform 2d NVC coord to 3D vector)
+		//U contribution
+		VM_SCALE3(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_UDIR], nvcU);    
+		//V contribution
+		VM_SCALE3(tempVec, sgFace2DMapping[a_FaceIdx][CP_VDIR], nvcV);
+		VM_ADD3(a_XYZ, tempVec, a_XYZ);
+		//add face axis
+		VM_ADD3(a_XYZ, sgFace2DMapping[a_FaceIdx][CP_FACEAXIS], a_XYZ);
+
+		//normalize vector
+		VM_NORM3(a_XYZ, a_XYZ);
+	}
 }
-
+// SL END
 
 //--------------------------------------------------------------------------------------
 // Convert 3D vector to cubemap face texel coordinates and face idx 
@@ -272,6 +390,40 @@ void TexelCoordToVect(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_Size, f
 //
 // returns face IDX and texel coords
 //--------------------------------------------------------------------------------------
+// SL BEGIN
+/*
+Mapping Texture Coordinates to Cube Map Faces
+Because there are multiple faces, the mapping of texture coordinates to positions on cube map faces
+is more complicated than the other texturing targets.  The EXT_texture_cube_map extension is purposefully
+designed to be consistent with DirectX 7's cube map arrangement.  This is also consistent with the cube
+map arrangement in Pixar's RenderMan package. 
+For cube map texturing, the (s,t,r) texture coordinates are treated as a direction vector (rx,ry,rz)
+emanating from the center of a cube.  (The q coordinate can be ignored since it merely scales the vector
+without affecting the direction.) At texture application time, the interpolated per-fragment (s,t,r)
+selects one of the cube map face's 2D mipmap sets based on the largest magnitude coordinate direction 
+the major axis direction). The target column in the table below explains how the major axis direction
+maps to the 2D image of a particular cube map target. 
+
+major axis 
+direction     target                              sc     tc    ma 
+----------    ---------------------------------   ---    ---   --- 
++rx          GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT   -rz    -ry   rx 
+-rx          GL_TEXTURE_CUBE_MAP_NEGATIVE_X_EXT   +rz    -ry   rx 
++ry          GL_TEXTURE_CUBE_MAP_POSITIVE_Y_EXT   +rx    +rz   ry 
+-ry          GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_EXT   +rx    -rz   ry 
++rz          GL_TEXTURE_CUBE_MAP_POSITIVE_Z_EXT   +rx    -ry   rz 
+-rz          GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_EXT   -rx    -ry   rz
+
+Using the sc, tc, and ma determined by the major axis direction as specified in the table above,
+an updated (s,t) is calculated as follows 
+s   =   ( sc/|ma| + 1 ) / 2 
+t   =   ( tc/|ma| + 1 ) / 2
+If |ma| is zero or very nearly zero, the results of the above two equations need not be defined
+(though the result may not lead to GL interruption or termination).  Once the cube map face's 2D mipmap
+set and (s,t) is determined, texture fetching and filtering proceeds like standard OpenGL 2D texturing. 
+*/
+// Note this method return U and V in range from 0 to size-1
+// SL END
 void VectToTexelCoord(float32 *a_XYZ, int32 a_Size, int32 *a_FaceIdx, int32 *a_U, int32 *a_V )
 {
    float32 nvcU, nvcV;
@@ -329,8 +481,11 @@ void VectToTexelCoord(float32 *a_XYZ, int32 a_Size, int32 *a_FaceIdx, int32 *a_U
    nvcU = VM_DOTPROD3(sgFace2DMapping[ faceIdx ][CP_UDIR], onFaceXYZ );
    nvcV = VM_DOTPROD3(sgFace2DMapping[ faceIdx ][CP_VDIR], onFaceXYZ );
 
-   u = (int32)floor( a_Size * 0.5f * (nvcU + 1.0f) );
-   v = (int32)floor( a_Size * 0.5f * (nvcV + 1.0f) );
+   // SL BEGIN
+   // Modify original AMD code to return value from 0 to Size - 1
+   u = (int32)floor( (a_Size - 1) * 0.5f * (nvcU + 1.0f) );
+   v = (int32)floor( (a_Size - 1) * 0.5f * (nvcV + 1.0f) );
+   // SL END
 
    *a_FaceIdx = faceIdx;
    *a_U = u;
@@ -419,10 +574,12 @@ static float32 AreaElement( float32 x, float32 y )
 
 float32 TexelCoordSolidAngle(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_Size)
 {
-   //scale up to [-1, 1] range (inclusive), offset by 0.5 to point to texel center.
+   // transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
+   // (+ 0.5f is for texel center addressing)
    float32 U = (2.0f * ((float32)a_U + 0.5f) / (float32)a_Size ) - 1.0f;
    float32 V = (2.0f * ((float32)a_V + 0.5f) / (float32)a_Size ) - 1.0f;
 
+   // Shift from a demi texel, mean 1.0f / a_Size with U and V in [-1..1]
    float32 InvResolution = 1.0f / a_Size;
 
 	// U and V are the -1..1 texture coordinate on the current face.
@@ -448,7 +605,9 @@ float32 TexelCoordSolidAngle(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_
 //  if _bx2 style scaled and biased vectors are needed, uncomment the SCALE and BIAS
 //  below
 //--------------------------------------------------------------------------------------
-void CCubeMapProcessor::BuildNormalizerCubemap(int32 a_Size, CImageSurface *a_Surface )
+// SL BEGIN
+void CCubeMapProcessor::BuildNormalizerCubemap(int32 a_Size, CImageSurface *a_Surface, int32 a_FixupType)
+// SL END
 {
    int32 iCubeFace, u, v;
 
@@ -465,7 +624,9 @@ void CCubeMapProcessor::BuildNormalizerCubemap(int32 a_Size, CImageSurface *a_Su
       {
          for(u=0; u < a_Surface[iCubeFace].m_Width; u++)
          {
-            TexelCoordToVect(iCubeFace, (float32)u, (float32)v, a_Size, texelPtr);
+			 // SL_BEGIN
+            TexelCoordToVect(iCubeFace, (float32)u, (float32)v, a_Size, texelPtr, a_FixupType);
+			// SL END
 
             //VM_SCALE3(texelPtr, texelPtr, 0.5f);
             //VM_BIAS3(texelPtr, texelPtr, 0.5f);
@@ -486,7 +647,9 @@ void CCubeMapProcessor::BuildNormalizerCubemap(int32 a_Size, CImageSurface *a_Su
 // if _bx2 style scaled and biased vectors are needed, uncomment the SCALE and BIAS
 // below
 //--------------------------------------------------------------------------------------
-void CCubeMapProcessor::BuildNormalizerSolidAngleCubemap(int32 a_Size, CImageSurface *a_Surface )
+// SL BEGIN
+void CCubeMapProcessor::BuildNormalizerSolidAngleCubemap(int32 a_Size, CImageSurface *a_Surface, int32 a_FixupType)
+// SL END
 {
    int32 iCubeFace, u, v;
 
@@ -503,7 +666,9 @@ void CCubeMapProcessor::BuildNormalizerSolidAngleCubemap(int32 a_Size, CImageSur
       {
          for(u=0; u<a_Surface[iCubeFace].m_Width; u++)
          {
-            TexelCoordToVect(iCubeFace, (float32)u, (float32)v, a_Size, texelPtr);
+			// SL_BEGIN
+            TexelCoordToVect(iCubeFace, (float32)u, (float32)v, a_Size, texelPtr, a_FixupType);
+			// SL END
             //VM_SCALE3(texelPtr, texelPtr, 0.5f);
             //VM_BIAS3(texelPtr, texelPtr, 0.5f);
 
@@ -702,7 +867,7 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
     CP_ITYPE *a_DstVal, uint32 a_FilterType, bool8 a_bUseSolidAngleWeighting
 	// SL BEGIN
 	,uint32 a_SpecularPower
-	,bool8 a_bPhongBRDF
+	,int32 a_LightingModel
 	// SL END
 	)
 {
@@ -856,7 +1021,7 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
    else // if (a_FilterType != CP_FILTER_TYPE_COSINE_POWER)
    {
    
-   int32 IsPhongBRDF = a_bPhongBRDF ? 1 : 0; // This value will be added to the specular power
+   int32 IsPhongBRDF	= (a_LightingModel == CP_LIGHTINGMODEL_PHONG_BRDF || a_LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? 1 : 0; // This value will be added to the specular power
 
    //iterate over cubefaces
    for(iFaceIdx=0; iFaceIdx<6; iFaceIdx++ )
@@ -896,8 +1061,8 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
 					//solid angle stored in 4th channel of normalizer/solid angle cube map
 					weight = *(texelVect+3); 
 
-					// Here we decide if we use a Phong or a Phong BRDF.
-					// Phong BRDF is jsut the Phong model multiply by the cosine of the lambert law
+					// Here we decide if we use a Phong/Blinn or a Phong/Blinn BRDF.
+					// Phong/Blinn BRDF is just the Phong/Blinn model multiply by the cosine of the lambert law
 					// so just adding one to specularpower do the trick.					   
 					weight *= pow(tapDotProd, (float32)(a_SpecularPower + IsPhongBRDF));
 
@@ -905,7 +1070,7 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
 					for(k=0; k<nSrcChannels; k++)   //(aSrcCubeMap[iFaceIdx].m_NumChannels) //up to 4 channels 
 					{
 						dstAccum[k] += weight * *(srcCubeRowStartPtr + srcCubeRowWalk);
-						srcCubeRowWalk++;                            
+						srcCubeRowWalk++;
 					} 
 
 					weightAccum += weight; //accumulate weight
@@ -992,7 +1157,12 @@ void CCubeMapProcessor::FixupCubeEdges(CImageSurface *a_CubeMap, int32 a_FixupTy
 
    //if there is no fixup, or fixup width = 0, do nothing
    if((a_FixupType == CP_FIXUP_NONE) ||
-      (a_FixupWidth == 0)  )
+      (a_FixupWidth == 0) 
+	  // SL BEGIN
+	  || (a_FixupType == CP_FIXUP_BENT && a_CubeMap[0].m_Width != 1) // In case of Bent Fixup and width of 1, we take the average of the texel color.
+	  || (a_FixupType == CP_FIXUP_WARP && a_CubeMap[0].m_Width != 1)
+	  // SL END
+	  )
    {
       return;
    }
@@ -1686,7 +1856,7 @@ void CCubeMapProcessor::GetOutputFaceData(int32 a_FaceIdx, int32 a_Level, int32 
 void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
     int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	// SL BEGIN
-	, uint32 a_SpecularPower, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF
+	, uint32 a_SpecularPower, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel
 	// SL END
 	)
 {
@@ -1701,7 +1871,9 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 
 
    //Build filter lookup tables based on the source miplevel size
-   PrecomputeFilterLookupTables(a_FilterType, m_InputSurface[0].m_Width, a_BaseFilterAngle);
+   // SL BEGIN
+   PrecomputeFilterLookupTables(a_FilterType, m_InputSurface[0].m_Width, a_BaseFilterAngle, a_FixupType);
+   // SL END
 
    //initialize thread progress
    // SL BEGIN
@@ -1716,7 +1888,7 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
    {
 	   // Note that we redo the normalization as in PrecomputeFilterLookupTables
 	   // Don't care for now because we should use Multithread approach
-	   SHFilterCubeMap(a_bUseSolidAngle);
+	   SHFilterCubeMap(a_bUseSolidAngle, a_FixupType);
    }
    else
    {
@@ -1732,7 +1904,8 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 			 0
 			// SL BEGIN
 			, a_SpecularPower
-			, a_bPhongBRDF
+			, a_LightingModel
+			, a_FixupType
 			// SL END
 			 ); //thread 0 is processing
 	   }   
@@ -1757,7 +1930,8 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 		  sg_FilterOptionsCPU1.m_SpecularPower = a_SpecularPower;
 		  sg_FilterOptionsCPU1.m_CosinePowerDropPerMip = a_CosinePowerDropPerMip;
 		  sg_FilterOptionsCPU1.m_bIrradianceCubemap = a_bIrradianceCubemap;
-		  sg_FilterOptionsCPU1.m_bPhongBRDF = a_bPhongBRDF;
+		  sg_FilterOptionsCPU1.m_LightingModel = a_LightingModel;
+		  sg_FilterOptionsCPU1.m_FixupType = a_FixupType;
 
    		  sg_ThreadFilterFace[1].m_ThreadProgress.m_CurrentMipLevel = 0;
 		  sg_ThreadFilterFace[1].m_ThreadProgress.m_CurrentFace = 3;
@@ -1781,7 +1955,8 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 			 0
 			// SL BEGIN
 			, a_SpecularPower
-			, a_bPhongBRDF
+			, a_LightingModel
+			, a_FixupType
 			// SL END
 			 ); //thread 0 is processing
 
@@ -1825,7 +2000,9 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 	  // SL END
 
       //Build filter lookup tables based on the source miplevel size
-      PrecomputeFilterLookupTables(a_FilterType, m_OutputSurface[i][0].m_Width, coneAngle);
+	  // SL BEGIN
+      PrecomputeFilterLookupTables(a_FilterType, m_OutputSurface[i][0].m_Width, coneAngle, a_FixupType);
+	  // SL END
 
       //filter cube surfaces
       FilterCubeSurfaces(m_OutputSurface[i], m_OutputSurface[i+1], coneAngle, a_FilterType, a_bUseSolidAngle,
@@ -1834,7 +2011,8 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
          0
 		// SL BEGIN
 		, a_SpecularPower
-		, a_bPhongBRDF
+		, a_LightingModel
+		, a_FixupType
 		// SL END
 		 ); //thread 0 is processing
 
@@ -1859,7 +2037,9 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 //  -tap weight lookup table
 // 
 //--------------------------------------------------------------------------------------
-void CCubeMapProcessor::PrecomputeFilterLookupTables(uint32 a_FilterType, int32 a_SrcCubeMapWidth, float32 a_FilterConeAngle)
+// SL BEGIN
+void CCubeMapProcessor::PrecomputeFilterLookupTables(uint32 a_FilterType, int32 a_SrcCubeMapWidth, float32 a_FilterConeAngle, int32 a_FixupType)
+// SL END
 {
     float32 srcTexelAngle;
     int32   iCubeFace;
@@ -1895,7 +2075,9 @@ void CCubeMapProcessor::PrecomputeFilterLookupTables(uint32 a_FilterType, int32 
     }
 
     //Normalized vectors per cubeface and per-texel solid angle 
-    BuildNormalizerSolidAngleCubemap(a_SrcCubeMapWidth, m_NormCubeMap);
+	// SL BEGIN
+    BuildNormalizerSolidAngleCubemap(a_SrcCubeMapWidth, m_NormCubeMap, a_FixupType);
+	// SL END
 
 }
 
@@ -1914,9 +2096,10 @@ void CCubeMapProcessor::PrecomputeFilterLookupTables(uint32 a_FilterType, int32 
 void CCubeMapProcessor::FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
     float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, int32 a_FaceIdxStart, 
     int32 a_FaceIdxEnd, int32 a_ThreadIdx
-	// SL BEGIN
+	// SL BEGIN	
 	, uint32 a_SpecularPower
-	, bool8 a_bPhongBRDF
+	, int32 a_LightingModel
+	, int32 a_FixupType
 	// SL END
 	)
 {
@@ -1994,7 +2177,9 @@ void CCubeMapProcessor::FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSu
                 float32 centerTapDir[3];  //direction of center tap
 
                 //get center tap direction
-                TexelCoordToVect(iCubeFace, (float32)u, (float32)v, dstSize, centerTapDir );
+                // SL BEGIN
+				TexelCoordToVect(iCubeFace, (float32)u, (float32)v, dstSize, centerTapDir, a_FixupType);
+				// SL END
 
                 //clear old per-face filter extents
                 ClearFilterExtents(filterExtents);
@@ -2006,7 +2191,7 @@ void CCubeMapProcessor::FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSu
                 ProcessFilterExtents(centerTapDir, dotProdThresh, filterExtents, m_NormCubeMap, a_SrcCubeMap, texelPtr, a_FilterType, a_bUseSolidAngle
 					// SL BEGIN
 					, a_SpecularPower
-					, a_bPhongBRDF
+					, a_LightingModel
 					// SL END
 					);
 
@@ -2046,7 +2231,7 @@ static float32 GetBaseFilterAngle(float32 cosinePower)
 void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, 
       float32 a_MipAnglePerLevelScale, int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	  // SL BEGIN
-	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF
+	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel
 	  // SL END
 	  )
 {
@@ -2086,7 +2271,8 @@ void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_I
 	  sg_FilterOptionsCPU0.m_SpecularPower = a_SpecularPower;
 	  sg_FilterOptionsCPU0.m_CosinePowerDropPerMip = a_CosinePowerDropPerMip;
 	  sg_FilterOptionsCPU0.m_bIrradianceCubemap = a_bIrradianceCubemap;
-	  sg_FilterOptionsCPU0.m_bPhongBRDF = a_bPhongBRDF;
+	  sg_FilterOptionsCPU0.m_LightingModel = a_LightingModel;
+	  sg_FilterOptionsCPU0.m_FixupType = a_FixupType;
 	  // SL END
 
       m_Status = CP_STATUS_PROCESSING;
@@ -2124,7 +2310,7 @@ void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_I
       FilterCubeMapMipChain(a_BaseFilterAngle, a_InitialMipAngle, a_MipAnglePerLevelScale, a_FilterType, 
          a_FixupType, a_FixupWidth, a_bUseSolidAngle
 		// SL BEGIN
-		,a_SpecularPower, a_CosinePowerDropPerMip, a_bIrradianceCubemap, a_bPhongBRDF
+		,a_SpecularPower, a_CosinePowerDropPerMip, a_bIrradianceCubemap, a_LightingModel
 		// SL END
 		 );
    
@@ -2522,7 +2708,9 @@ DWORD WINAPI ThreadProcFilterFace(LPVOID a_ThreadIdx)
 			float32 centerTapDir[3];  //direction of center tap
 
 			//get center tap direction
-			TexelCoordToVect(tff->m_FaceIdx, (float32)u, (float32)v, dstSize, centerTapDir );
+			// SL BEGIN
+			TexelCoordToVect(tff->m_FaceIdx, (float32)u, (float32)v, dstSize, centerTapDir, tff->m_FixupType);
+			// SL END
 
 			//clear old per-face filter extents
 			tff->m_cmProc->ClearFilterExtents(filterExtents);
@@ -2531,7 +2719,7 @@ DWORD WINAPI ThreadProcFilterFace(LPVOID a_ThreadIdx)
 			tff->m_cmProc->DetermineFilterExtents(centerTapDir, srcSize, tff->m_filterSize, filterExtents );
 
 			//perform filtering of src faces using filter extents 
-			tff->m_cmProc->ProcessFilterExtents(centerTapDir, tff->m_dotProdThresh, filterExtents, tff->m_cmProc->m_NormCubeMap, tff->m_SrcCubeMap, texelPtr, tff->m_FilterType, tff->m_bUseSolidAngle, tff->m_SpecularPower, tff->m_bPhongBRDF);
+			tff->m_cmProc->ProcessFilterExtents(centerTapDir, tff->m_dotProdThresh, filterExtents, tff->m_cmProc->m_NormCubeMap, tff->m_SrcCubeMap, texelPtr, tff->m_FilterType, tff->m_bUseSolidAngle, tff->m_SpecularPower, tff->m_LightingModel);
 
 			texelPtr += tff->m_DstCubeMap[tff->m_FaceIdx].m_NumChannels;
 		}            
@@ -2541,7 +2729,7 @@ DWORD WINAPI ThreadProcFilterFace(LPVOID a_ThreadIdx)
 }
 
 void CCubeMapProcessor::FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
-    float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex, bool8 a_bPhongBRDF)
+    float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex, int32 a_LightingModel, int32 a_FixupType)
 {
     CBBoxInt32    filterExtents[6];   //bounding box per face to specify region to process
                                       // note that pixels within these regions may be rejected 
@@ -2629,9 +2817,10 @@ void CCubeMapProcessor::FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMa
 				sg_ThreadFilterFace[ThreadIdx].m_bUseSolidAngle		= a_bUseSolidAngle; 
 				sg_ThreadFilterFace[ThreadIdx].m_FaceIdx			= FaceIdx;
 				sg_ThreadFilterFace[ThreadIdx].m_SpecularPower		= a_SpecularPower;
-				sg_ThreadFilterFace[ThreadIdx].m_bPhongBRDF			= a_bPhongBRDF;
+				sg_ThreadFilterFace[ThreadIdx].m_LightingModel		= a_LightingModel;
 				sg_ThreadFilterFace[ThreadIdx].m_dotProdThresh		= dotProdThresh;
 				sg_ThreadFilterFace[ThreadIdx].m_filterSize			= filterSize;
+				sg_ThreadFilterFace[ThreadIdx].m_FixupType			= a_FixupType;				
 
 				// thread progress
 				sg_ThreadFilterFace[ThreadIdx].m_ThreadProgress.m_CurrentMipLevel	= a_MipIndex;
@@ -2735,7 +2924,7 @@ void EvalSHBasis(const float32* dir, float64* res )
 	res[24] = (3*sqrt(35/CP_PI)*(x[4] - 6*x[2]*y[2] + y[4]))/16.;
 }
 
-void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
+void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting, int32 a_FixupType)
 {
 	CImageSurface* SrcCubeImage = m_InputSurface;
 	CImageSurface* DstCubeImage = m_OutputSurface[0];
@@ -2762,7 +2951,7 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 	}
 
 	//Normalized vectors per cubeface and per-texel solid angle 
-	BuildNormalizerSolidAngleCubemap(m_InputSurface->m_Width, m_NormCubeMap);
+	BuildNormalizerSolidAngleCubemap(m_InputSurface->m_Width, m_NormCubeMap, a_FixupType);
 
 	const int32 NormCubeMapNumChannels = m_NormCubeMap[0].m_NumChannels; // This need to be init here after the generation of m_NormCubeMap
 
@@ -2842,7 +3031,7 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 	}
 
 	//Normalized vectors per cubeface and per-texel solid angle 
-	BuildNormalizerSolidAngleCubemap(DstCubeImage->m_Width, m_NormCubeMap);
+	BuildNormalizerSolidAngleCubemap(DstCubeImage->m_Width, m_NormCubeMap, a_FixupType);
 
 	for (int32 iFaceIdx = 0; iFaceIdx < 6; iFaceIdx++)
 	{
@@ -2881,7 +3070,7 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting)
 }
 
 void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-    int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, bool8 a_bPhongBRDF
+    int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel
 	)
 {
 	//Cone angle start (for generating subsequent mip levels)
@@ -2896,7 +3085,7 @@ void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAng
 		// Other level have no meaning in this case.
 		if (LevelIndex == 0 && a_bIrradianceCubemap)
 		{
-			SHFilterCubeMap(a_bUseSolidAngle);
+			SHFilterCubeMap(a_bUseSolidAngle, a_FixupType);
 
 			FixupCubeEdges(m_OutputSurface[0], a_FixupType, a_FixupWidth);
 
@@ -2980,12 +3169,14 @@ void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAng
 		}
 
 		//Build filter lookup tables based on the source miplevel size
-		PrecomputeFilterLookupTables(FilterType, SrcCubeImage->m_Width, Angle);
+		// SL BEGIN
+		PrecomputeFilterLookupTables(FilterType, SrcCubeImage->m_Width, Angle, a_FixupType);
+		// SL END
 
 		// Use multithread only for large mipmap
 		if (SrcCubeImage->m_Width >= 64)
 		{
-			FilterCubeSurfacesMultithread(SrcCubeImage, DstCubeImage, Angle, FilterType, a_bUseSolidAngle, specularPower, LevelIndex, a_bPhongBRDF);
+			FilterCubeSurfacesMultithread(SrcCubeImage, DstCubeImage, Angle, FilterType, a_bUseSolidAngle, specularPower, LevelIndex, a_LightingModel, a_FixupType);
 		}
 		else
 		{
@@ -2995,7 +3186,8 @@ void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAng
 								5,  //end at face 5
 								0, //Main thread is processing
 								specularPower,
-								a_bPhongBRDF
+								a_LightingModel,
+								a_FixupType
 								); 
 
 		}

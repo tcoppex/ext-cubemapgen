@@ -47,7 +47,7 @@ CCubeGenApp::CCubeGenApp(void)
    // SL BEGIN
    m_bUseMultithread = TRUE;
    m_bIrradianceCubemap = FALSE;
-   m_bPhongBRDF = FALSE;
+   m_LightingModel = FALSE;
    // SL END
 
    //write mip level to alpha so the cube maps mip level can be determined by ps.2.0 or ps.2.b shaders
@@ -69,7 +69,9 @@ CCubeGenApp::CCubeGenApp(void)
    m_SpecularPowerDropPerMip = 0.25;
    // SL END
 
-   m_EdgeFixupTech = CP_FIXUP_PULL_HERMITE;
+   // SL BEGIN
+   m_EdgeFixupTech = CP_FIXUP_WARP;
+   // SL END
    m_bCubeEdgeFixup = TRUE;
    m_EdgeFixupWidth = 1;
 
@@ -1844,9 +1846,18 @@ void CCubeGenApp::FilterCubeMap(void)
    SetCubeMapProcessorInputCubeMap(&m_CubeMapProcessor);
 
    //cube edge fixup
+   // SL BEGIN
+   // Scale highligh shape to better match lighting model as we can only filter cubemap with Phong filtering. 4.2 is from TriAce physically based rendering slide.
+   float32 SpecularPower = (m_LightingModel == CP_LIGHTINGMODEL_BLINN || m_LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? m_SpecularPower / 4.2f : m_SpecularPower; 
+
+   int32 EdgeFixupTech = CP_FIXUP_NONE;
+   // SL END
    if(m_bCubeEdgeFixup == TRUE)
    {
       fixupWidth = m_EdgeFixupWidth;
+	  // SL BEGIN
+	  EdgeFixupTech = m_EdgeFixupTech;
+	  // SL END
    }
    else
    {
@@ -1861,7 +1872,7 @@ void CCubeGenApp::FilterCubeMap(void)
    //begin filtering, if one or more filtereing threads is enabled, initiate the filtering threads, and return 
    // from the function with the threads running in the background.
    m_CubeMapProcessor.InitiateFiltering(m_BaseFilterAngle, m_MipInitialFilterAngle, m_MipFilterAngleScale, 
-	  m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, m_SpecularPower, m_bUseMultithread, m_SpecularPowerDropPerMip, m_bIrradianceCubemap, m_bPhongBRDF);
+	  m_FilterTech, EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, SpecularPower, m_bUseMultithread, m_SpecularPowerDropPerMip, m_bIrradianceCubemap, m_LightingModel);
    // SL END
 
    m_FramesSinceLastRefresh = 0;

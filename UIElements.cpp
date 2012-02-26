@@ -227,7 +227,7 @@ HANDLE                  g_ConsoleHandle;                 // Console handle
 #define IDC_IRRADIANCE_CUBEMAP_CHECKBOX			2104
 #define IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX	2105
 #define IDC_SPECULAR_POWER_MIP_DROP_STATICTEXT	2106
-#define IDC_PHONG_BRDF_CHECKBOX					2107
+#define IDC_LIGHTINGMODEL_TYPE					2107
 // SL END
 
 //--------------------------------------------------------------------------------------
@@ -498,7 +498,9 @@ void ProcessCommandLineForHelpOptions(void)
 
 
          ConsoleOutput(consoleStdErr, 
-            "CubeMapGen: A Cubemap Filtering, Mipchain Generation,  and Realtime Preview Tool\n"
+			 // SL BEGIN
+            "ModifiedCubeMapGen: A Cubemap Filtering, Mipchain Generation,  and Realtime Preview Tool\n"
+			// SL END
             "AMD 3D Application Research Group\n"
             "\n"
             );
@@ -525,15 +527,15 @@ void ProcessCommandLineForHelpOptions(void)
             " -perLevelMipFilterScale:[float=2.0]  Filtering angle scale to generate succesive cubemap miplevels.\n"
 			// SL BEGIN
             " -filterTech:{Disc|Cone|Cosine|AngularGaussian|CosinePower} Technique used for filtering. \n"
+            " -edgeFixupTech:{None|LinearPull|HermitePull|LinearAverage|HermiteAverage|Bent|Warp} Technique used for cubemap edge fixup \n"
 			// SL END
-            " -edgeFixupTech:{None|LinearPull|HermitePull|LinearAverage|HermiteAverage} Technique used for cubemap edge fixup \n"
             " -edgeFixupWidth:[int=1]  Width in texels for edge fixup. (0 = no edge fixup) \n"
             " -solidAngleWeighting  Use each texels solid angle to compute tap weights in the filtering kernel.\n"
 			// SL BEGIN
 			" -CosinePower define the specular power to use when Cosine power filtering is used.\n"
 			" -CosinePowerDropPerMip allow to specify the specular power scale to generate successive cubemap miplevels .\n"
 			" -IrradianceCubemap specify that the Base filtering is a diffuse convolution (like a cosinus filter with a Base angle of 180).\n"
-			" -PhongBRDF specify if the Cosine power filtering is for a phong lighting model or a phong BRDF"
+			" -LightingModel:{Phong|PhongBRDF|Blinn|BlinnBRDF} Lighing model that the cubemap should match. \n"
 			// SL END
             " -writeMipLevelIntoAlpha  Encode the miplevel in the alpha channel. \n"
             " -importDegamma:[float=1.0]  Gamma of cube map to import. \n"
@@ -734,10 +736,30 @@ void ProcessCommandLineArguements(void)
 	  {
 		  g_CubeGenApp.m_bIrradianceCubemap = TRUE;
 	  }
-	  else if ( WCPrefixCmp(cmdArg, L"-PhongBRDF", &suffixStr) )
-	  {
-		  g_CubeGenApp.m_bPhongBRDF = TRUE;
-	  }
+	  else if( WCPrefixCmp(cmdArg, L"-LightingModel:", &suffixStr) )
+      {
+         if( wcscmp(L"Phong", suffixStr) == 0 )
+         {
+            g_CubeGenApp.m_LightingModel = CP_LIGHTINGMODEL_PHONG; 
+         }
+         else if( wcscmp(L"PhongBRDF", suffixStr) == 0 )
+         {
+            g_CubeGenApp.m_LightingModel = CP_LIGHTINGMODEL_PHONG_BRDF;
+         }
+         else if( wcscmp(L"Blinn", suffixStr) == 0 )
+         {
+            g_CubeGenApp.m_LightingModel = CP_LIGHTINGMODEL_BLINN;
+         }
+         else if( wcscmp(L"BlinnBRDF", suffixStr) == 0 )
+         {
+            g_CubeGenApp.m_LightingModel = CP_LIGHTINGMODEL_BLINN_BRDF;
+         }
+         else
+         {
+            bInvalidOption = true;
+            break;
+         }
+      }
      // SL END
       else if( WCPrefixCmp(cmdArg, L"-writeMipLevelIntoAlpha", &suffixStr) )
       {
@@ -795,6 +817,16 @@ void ProcessCommandLineArguements(void)
          {
             g_CubeGenApp.m_EdgeFixupTech = CP_FIXUP_AVERAGE_HERMITE;
          }
+		 // SL BEGIN
+         else if( wcscmp(L"Bent", suffixStr) == 0 )
+         {
+            g_CubeGenApp.m_EdgeFixupTech = CP_FIXUP_BENT;
+         }
+         else if( wcscmp(L"Warp", suffixStr) == 0 )
+         {
+            g_CubeGenApp.m_EdgeFixupTech = CP_FIXUP_WARP;
+         }		 
+		 // SL END
          else
          {
             bInvalidOption = true;
@@ -1619,10 +1651,14 @@ void SetupGUI(void)
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX )->SetSpacing(UI_EDITBOX_SPACING);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX )->SetTextColor(UI_EDITBOX_TEXTCOLOR);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX )->SetCaretColor(UI_EDITBOX_TEXTCOLOR);
+   g_pFilterUIRegion->m_Dialog.AddStatic(0, L"Lighting model", iX, iY += UI_ELEMENT_VERTICAL_SPACING, 100, 16 );
+   g_pFilterUIRegion->m_Dialog.AddComboBox( IDC_LIGHTINGMODEL_TYPE, iX + 90, iY, UI_ELEMENT_WIDTH-90, UI_ELEMENT_HEIGHT  );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_LIGHTINGMODEL_TYPE )->AddItem( L"Phong", (void *)CP_LIGHTINGMODEL_PHONG );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_LIGHTINGMODEL_TYPE )->AddItem( L"PhongBRDF", (void *)CP_LIGHTINGMODEL_PHONG_BRDF );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_LIGHTINGMODEL_TYPE )->AddItem( L"Blinn", (void *)CP_LIGHTINGMODEL_BLINN );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_LIGHTINGMODEL_TYPE )->AddItem( L"BlinnBRDF", (void *)CP_LIGHTINGMODEL_BLINN_BRDF );
    g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX, L"Irradiance cubemap", iX, iY += 20, 160, 16 );
    g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX )->SetChecked(false);
-   g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_PHONG_BRDF_CHECKBOX, L"Phong BRDF", iX, iY += 20, 160, 16 );
-   g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_PHONG_BRDF_CHECKBOX )->SetChecked(false);   
    iY += 4;
    // SL END
 
@@ -1667,6 +1703,10 @@ void SetupGUI(void)
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"Pull Hermite", (void *) CP_FIXUP_PULL_HERMITE );
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"Avg Linear", (void *) CP_FIXUP_AVERAGE_LINEAR );
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"Avg Hermite", (void *) CP_FIXUP_AVERAGE_HERMITE );
+   // SL BEGIN
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"Bent", (void *) CP_FIXUP_BENT );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"Warp", (void *) CP_FIXUP_WARP );
+   // SL END
    //g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"None", (void *) CP_FIXUP_NONE );
 //   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->SetDropHeight( 4 * UI_DROPDOWN_ITEM_HEIGHT );
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->SetScrollBarWidth( 0 );
@@ -3432,11 +3472,12 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl )
 		  g_CubeGenApp.m_bIrradianceCubemap = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX )->GetChecked();
 	  }
 	  break;
-	  case IDC_PHONG_BRDF_CHECKBOX:
-   	  {
-		  g_CubeGenApp.m_bPhongBRDF = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_PHONG_BRDF_CHECKBOX )->GetChecked();
-	  }
-	  break;
+      case IDC_LIGHTINGMODEL_TYPE:
+      {
+          pItem = ((CDXUTComboBox*)pControl)->GetSelectedItem();
+          g_CubeGenApp.m_LightingModel = (int32)pItem->pData;
+      }
+      break;
 	  // SL END
       case IDC_REFRESH_OUTPUT_CUBEMAP:
       {
@@ -3618,7 +3659,7 @@ void SetUIElementsUsingCurrentSettings(void)
    // SL BEGIN
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_MULTITHREAD_CHECKBOX)->SetChecked(g_CubeGenApp.m_bUseMultithread ? true:false );
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_IRRADIANCE_CUBEMAP_CHECKBOX)->SetChecked(g_CubeGenApp.m_bIrradianceCubemap ? true:false );      
-   g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_PHONG_BRDF_CHECKBOX)->SetChecked(g_CubeGenApp.m_bPhongBRDF ? true:false );
+   g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_LIGHTINGMODEL_TYPE)->SetSelectedByData((void *)g_CubeGenApp.m_LightingModel );
    // SL END
 }
 
