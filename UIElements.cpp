@@ -724,11 +724,11 @@ void ProcessCommandLineArguements(void)
          g_CubeGenApp.m_bUseSolidAngleWeighting = TRUE;
       }
       // SL BEGIN
-      else if( WCPrefixCmp(cmdArg, L"-CosinePower", &suffixStr) )
+	  else if( WCPrefixCmp(cmdArg, L"-CosinePower:", &suffixStr) )
       {            
          g_CubeGenApp.m_SpecularPower = (uint32)_wtoi(suffixStr);
       }
-	  else if( WCPrefixCmp(cmdArg, L"-CosinePowerDropPerMip", &suffixStr) )
+	  else if( WCPrefixCmp(cmdArg, L"-CosinePowerDropPerMip:", &suffixStr) )
 	  {            
 		  g_CubeGenApp.m_SpecularPowerDropPerMip = (uint32)_wtof(suffixStr);
 	  }
