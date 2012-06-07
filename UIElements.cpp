@@ -532,8 +532,8 @@ void ProcessCommandLineForHelpOptions(void)
             " -edgeFixupWidth:[int=1]  Width in texels for edge fixup. (0 = no edge fixup) \n"
             " -solidAngleWeighting  Use each texels solid angle to compute tap weights in the filtering kernel.\n"
 			// SL BEGIN
-			" -CosinePower define the specular power to use when Cosine power filtering is used.\n"
-			" -CosinePowerDropPerMip allow to specify the specular power scale to generate successive cubemap miplevels .\n"
+			" -CosinePower: define the specular power to use when Cosine power filtering is used.\n"
+			" -CosinePowerDropPerMip: allow to specify the specular power scale to generate successive cubemap miplevels .\n"
 			" -IrradianceCubemap specify that the Base filtering is a diffuse convolution (like a cosinus filter with a Base angle of 180).\n"
 			" -LightingModel:{Phong|PhongBRDF|Blinn|BlinnBRDF} Lighing model that the cubemap should match. \n"
 			// SL END
@@ -730,7 +730,7 @@ void ProcessCommandLineArguements(void)
       }
 	  else if( WCPrefixCmp(cmdArg, L"-CosinePowerDropPerMip:", &suffixStr) )
 	  {            
-		  g_CubeGenApp.m_SpecularPowerDropPerMip = (uint32)_wtof(suffixStr);
+		  g_CubeGenApp.m_SpecularPowerDropPerMip = (float32)_wtof(suffixStr);
 	  }
 	  else if ( WCPrefixCmp(cmdArg, L"-IrradianceCubemap", &suffixStr) )
 	  {
