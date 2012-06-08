@@ -2227,19 +2227,7 @@ void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_I
 {
 	// SL BEGIN
 	ModifiedCubemapgenOption MCO;
-	// Scale highlight shape to better match lighting model as we can only filter cubemap with Phong filtering.
-	// http://seblagarde.wordpress.com/2012/03/29/relationship-between-phong-and-blinn-lighting-model/
-
-	// Approximate curve
-	float32 Factor = 1.0f;
-	if (a_SpecularPower != 0.0f)
-	{
-		float32 SP_2	= a_SpecularPower * a_SpecularPower;
-		float32 SP_3	= SP_2 * a_SpecularPower;
-		Factor		= 4.00012f - (0.624042f / SP_3) + (0.728329f / SP_2) + (1.22792f / a_SpecularPower);
-	}
-
-	MCO.SpecularPower				= (a_LightingModel == CP_LIGHTINGMODEL_BLINN || a_LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? a_SpecularPower / Factor : a_SpecularPower; 
+	MCO.SpecularPower				= a_SpecularPower; 
 	MCO.CosinePowerDropPerMip		= a_CosinePowerDropPerMip;
 	MCO.NumMipmap					= a_NumMipmap;
 	MCO.CosinePowerMipmapChainMode	= a_CosinePowerMipmapChainMode;
@@ -3083,13 +3071,36 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting, int32 a
 	}
 }
 
+inline float32 GetSpecularPowerFactorToMatchPhong(float32 SpecularPower)
+{
+	// Scale highlight shape to better match lighting model as we can only filter cubemap with Phong filtering.
+	// http://seblagarde.wordpress.com/2012/03/29/relationship-between-phong-and-blinn-lighting-model/
+
+	/*
+	// Approximate curve
+	float32 Factor = 1.0f;
+	if (SpecularPower != 0.0f)
+	{
+		float32 SP_2 = SpecularPower * SpecularPower;
+		float32 SP_3 = SP_2 * SpecularPower;
+		Factor		 = 4.00012f - (0.624042f / SP_3) + (0.728329f / SP_2) + (1.22792f / SpecularPower);
+	}
+	*/
+
+	// Simply use 4
+	return 4.0f;
+}
+
 void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
     int32 a_FilterType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, const ModifiedCubemapgenOption& a_MCO
 	)
 {
+	// First, take count of the lighting model to modify SpecularPower
+	float32 RefSpecularPower = (a_MCO.LightingModel == CP_LIGHTINGMODEL_BLINN || a_MCO.LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? a_MCO.SpecularPower / GetSpecularPowerFactorToMatchPhong(a_MCO.SpecularPower) : a_MCO.SpecularPower; 
+
 	//Cone angle start (for generating subsequent mip levels)
 	float32 coneAngle = a_InitialMipAngle;
-	float32 specularPower = a_MCO.SpecularPower;
+	float32 specularPower = RefSpecularPower;
 	int32 Num = m_NumMipLevels; // Note that we need to filter the first level before generating mipmap
 								// So LevelIndex == 0 is base filtering hen LevelIndex > 0 is mipmap generation
 
@@ -3102,6 +3113,8 @@ void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAng
 			float32 Glossiness		= (NumMipmap == 1) ? 1.0f : max(1.0f - (FLOAT)(LevelIndex) / (FLOAT)(NumMipmap - 1), 0.0f);
 			// This function must match the decompression function of the engine.
 			specularPower = powf(2.0f, a_MCO.GlossScale * Glossiness + a_MCO.GlossBias);
+			// take count of the lighting model
+			specularPower = (a_MCO.LightingModel == CP_LIGHTINGMODEL_BLINN || a_MCO.LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? specularPower / GetSpecularPowerFactorToMatchPhong(specularPower) : specularPower; 
 		}
 
 		// TODO : Write a function to copy and scale the base mipmap in output
@@ -3231,7 +3244,7 @@ void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAng
 			// TODO : Use another method for Exclude (see first comment at start of the function
 			if (a_MCO.bExcludeBase && (LevelIndex == 0))
 			{
-				specularPower = a_MCO.SpecularPower;
+				specularPower = RefSpecularPower;
 			}
 
 			specularPower *= a_MCO.CosinePowerDropPerMip;
