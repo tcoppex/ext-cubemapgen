@@ -228,6 +228,15 @@ HANDLE                  g_ConsoleHandle;                 // Console handle
 #define IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX	2105
 #define IDC_SPECULAR_POWER_MIP_DROP_STATICTEXT	2106
 #define IDC_LIGHTINGMODEL_TYPE					2107
+#define IDC_EXCLUDEBASE_CHECKBOX				2108
+#define IDC_GLOSS_SCALE_STATICTEXT				2109
+#define IDC_GLOSS_BIAS_STATICTEXT				2110
+#define IDC_GLOSS_SCALE_EDITBOX					2111
+#define IDC_GLOSS_BIAS_EDITBOX					2112
+#define IDC_NUM_MIPMAP_STATICTEXT				2113
+#define IDC_NUM_MIPMAP_EDITBOX					2114
+#define IDC_COSINEPOWER_CHAIN_TYPE				2115
+
 // SL END
 
 //--------------------------------------------------------------------------------------
@@ -300,7 +309,9 @@ INT WINAPI WinMain( HINSTANCE, HINSTANCE, LPSTR, int )
 
    // Note that the framework should not parse the 
    DXUTInit( false, true, true );          // Do not parse the command line, handle the default hotkeys, and show msgboxes
-   DXUTCreateWindow( L"CubeMapGen: CubeMap Filtering and MipChain Generator" );
+   // SL BEGIN
+   DXUTCreateWindow( L"ModifiedCubeMapGen V1.66: CubeMap Filtering and MipChain Generator" );
+   // SL END
    DXUTCreateDevice( D3DADAPTER_DEFAULT, true, 1024, 768, IsDeviceAcceptable, ModifyDeviceSettings );
 
    //initialize ui elements
@@ -533,9 +544,14 @@ void ProcessCommandLineForHelpOptions(void)
             " -solidAngleWeighting  Use each texels solid angle to compute tap weights in the filtering kernel.\n"
 			// SL BEGIN
 			" -CosinePower: define the specular power to use when Cosine power filtering is used.\n"
-			" -CosinePowerDropPerMip: allow to specify the specular power scale to generate successive cubemap miplevels .\n"
+			" -CosinePowerDropPerMip: allow to specify the specular power scale to generate successive cubemap miplevels with CosinePowerMipmapChainMode Drop mode.\n"
+			" -NumMipmap: allow to specify the number of mipmap of the final chain to generate successive cubemap miplevels with CosinePowerMipmapChainMode Mipmap mode .\n"
+			" -CosinePowerMipmapChainMode:{Mipmap|Drop} Mode to use to generate Mipmap chain SpecularPower value with CosinePower filtering \n"
+			" -ExcludeBase Wheter the first level of mipmap will be convolved or not"
 			" -IrradianceCubemap specify that the Base filtering is a diffuse convolution (like a cosinus filter with a Base angle of 180).\n"
 			" -LightingModel:{Phong|PhongBRDF|Blinn|BlinnBRDF} Lighing model that the cubemap should match. \n"
+			" -GlossScale: Specify the scale component of the gloss decompression for calc specular power with CosinePowerFiltering and CosinePowerMipmapChainMode set to Mipmap"
+			" -GlossBias: Specify the bias component of the gloss decompression for calc specular power with CosinePowerFiltering and CosinePowerMipmapChainMode set to Mipmap"
 			// SL END
             " -writeMipLevelIntoAlpha  Encode the miplevel in the alpha channel. \n"
             " -importDegamma:[float=1.0]  Gamma of cube map to import. \n"
@@ -726,11 +742,35 @@ void ProcessCommandLineArguements(void)
       // SL BEGIN
 	  else if( WCPrefixCmp(cmdArg, L"-CosinePower:", &suffixStr) )
       {            
-         g_CubeGenApp.m_SpecularPower = (uint32)_wtoi(suffixStr);
+         g_CubeGenApp.m_SpecularPower = (float32)_wtof(suffixStr);
       }
 	  else if( WCPrefixCmp(cmdArg, L"-CosinePowerDropPerMip:", &suffixStr) )
 	  {            
-		  g_CubeGenApp.m_SpecularPowerDropPerMip = (float32)_wtof(suffixStr);
+		  g_CubeGenApp.m_CosinePowerDropPerMip = (float32)_wtof(suffixStr);
+	  }
+	  else if( WCPrefixCmp(cmdArg, L"-NumMipmap:", &suffixStr) )
+	  {            
+		  g_CubeGenApp.m_NumMipmap = (uint32)_wtoi(suffixStr);
+	  }
+	  else if( WCPrefixCmp(cmdArg, L"-CosinePowerMipmapChainMode:", &suffixStr) )
+	  {            
+		  if( wcscmp(L"Mipmap", suffixStr) == 0 )
+		  {
+			  g_CubeGenApp.m_CosinePowerMipmapChainMode = CP_COSINEPOWER_CHAIN_MIPMAP; 
+		  }
+		  else if( wcscmp(L"Drop", suffixStr) == 0 )
+		  {
+			  g_CubeGenApp.m_CosinePowerMipmapChainMode = CP_COSINEPOWER_CHAIN_DROP;
+		  }
+		  else
+		  {
+			  bInvalidOption = true;
+			  break;
+		  }
+	  }
+	  else if ( WCPrefixCmp(cmdArg, L"-ExcludeBase", &suffixStr) )
+	  {
+		  g_CubeGenApp.m_bExcludeBase = TRUE;
 	  }
 	  else if ( WCPrefixCmp(cmdArg, L"-IrradianceCubemap", &suffixStr) )
 	  {
@@ -760,6 +800,14 @@ void ProcessCommandLineArguements(void)
             break;
          }
       }
+	  else if( WCPrefixCmp(cmdArg, L"-GlossScale:", &suffixStr) )
+	  {            
+		  g_CubeGenApp.m_GlossScale = (float32)_wtof(suffixStr);
+	  }
+	  else if( WCPrefixCmp(cmdArg, L"-GlossBias:", &suffixStr) )
+	  {            
+		  g_CubeGenApp.m_GlossBias = (float32)_wtof(suffixStr);
+	  }
      // SL END
       else if( WCPrefixCmp(cmdArg, L"-writeMipLevelIntoAlpha", &suffixStr) )
       {
@@ -1640,7 +1688,7 @@ void SetupGUI(void)
 
     // SL BEGIN
    g_pFilterUIRegion->m_Dialog.AddStatic(IDC_SPECULAR_POWER_STATICTEXT, L"Cosine Power:", iX, iY += UI_ELEMENT_VERTICAL_SPACING, 120, 16);
-   g_pFilterUIRegion->m_Dialog.AddEditBox( IDC_SPECULAR_POWER_EDITBOX, L"128", iX + 120, iY, UI_ELEMENT_WIDTH - 120, UI_ELEMENT_HEIGHT);
+   g_pFilterUIRegion->m_Dialog.AddEditBox( IDC_SPECULAR_POWER_EDITBOX, L"128.0", iX + 120, iY, UI_ELEMENT_WIDTH - 120, UI_ELEMENT_HEIGHT);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_EDITBOX )->SetBorderWidth(UI_EDITBOX_BORDER_WIDTH);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_EDITBOX )->SetSpacing(UI_EDITBOX_SPACING);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_EDITBOX )->SetTextColor(UI_EDITBOX_TEXTCOLOR);
@@ -1651,6 +1699,16 @@ void SetupGUI(void)
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX )->SetSpacing(UI_EDITBOX_SPACING);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX )->SetTextColor(UI_EDITBOX_TEXTCOLOR);
    g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX )->SetCaretColor(UI_EDITBOX_TEXTCOLOR);
+   g_pFilterUIRegion->m_Dialog.AddStatic(IDC_NUM_MIPMAP_STATICTEXT, L"Num Mipmap:", iX, iY += UI_ELEMENT_VERTICAL_SPACING, 120, 16);
+   g_pFilterUIRegion->m_Dialog.AddEditBox( IDC_NUM_MIPMAP_EDITBOX, L"6", iX + 120, iY, UI_ELEMENT_WIDTH - 120, UI_ELEMENT_HEIGHT);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_NUM_MIPMAP_EDITBOX )->SetBorderWidth(UI_EDITBOX_BORDER_WIDTH);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_NUM_MIPMAP_EDITBOX )->SetSpacing(UI_EDITBOX_SPACING);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_NUM_MIPMAP_EDITBOX )->SetTextColor(UI_EDITBOX_TEXTCOLOR);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_NUM_MIPMAP_EDITBOX )->SetCaretColor(UI_EDITBOX_TEXTCOLOR);
+   g_pFilterUIRegion->m_Dialog.AddStatic(0, L"MipmapChain", iX, iY += UI_ELEMENT_VERTICAL_SPACING, 100, 16 );
+   g_pFilterUIRegion->m_Dialog.AddComboBox( IDC_COSINEPOWER_CHAIN_TYPE, iX + 90, iY, UI_ELEMENT_WIDTH-90, UI_ELEMENT_HEIGHT  );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_COSINEPOWER_CHAIN_TYPE )->AddItem( L"Drop", (void *)CP_COSINEPOWER_CHAIN_DROP );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_COSINEPOWER_CHAIN_TYPE )->AddItem( L"Mipmap", (void *)CP_COSINEPOWER_CHAIN_MIPMAP );
    g_pFilterUIRegion->m_Dialog.AddStatic(0, L"Lighting model", iX, iY += UI_ELEMENT_VERTICAL_SPACING, 100, 16 );
    g_pFilterUIRegion->m_Dialog.AddComboBox( IDC_LIGHTINGMODEL_TYPE, iX + 90, iY, UI_ELEMENT_WIDTH-90, UI_ELEMENT_HEIGHT  );
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_LIGHTINGMODEL_TYPE )->AddItem( L"Phong", (void *)CP_LIGHTINGMODEL_PHONG );
@@ -1659,6 +1717,20 @@ void SetupGUI(void)
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_LIGHTINGMODEL_TYPE )->AddItem( L"BlinnBRDF", (void *)CP_LIGHTINGMODEL_BLINN_BRDF );
    g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX, L"Irradiance cubemap", iX, iY += 20, 160, 16 );
    g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX )->SetChecked(false);
+   g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_EXCLUDEBASE_CHECKBOX, L"Exclude base", iX, iY += 20, 160, 16 );
+   g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_EXCLUDEBASE_CHECKBOX )->SetChecked(false);
+   g_pFilterUIRegion->m_Dialog.AddStatic(IDC_GLOSS_SCALE_STATICTEXT, L"Gloss scale:", iX, iY += UI_ELEMENT_VERTICAL_SPACING, 120, 16);
+   g_pFilterUIRegion->m_Dialog.AddEditBox( IDC_GLOSS_SCALE_EDITBOX, L"10", iX + 120, iY, UI_ELEMENT_WIDTH - 120, UI_ELEMENT_HEIGHT);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_SCALE_EDITBOX )->SetBorderWidth(UI_EDITBOX_BORDER_WIDTH);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_SCALE_EDITBOX )->SetSpacing(UI_EDITBOX_SPACING);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_SCALE_EDITBOX )->SetTextColor(UI_EDITBOX_TEXTCOLOR);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_SCALE_EDITBOX )->SetCaretColor(UI_EDITBOX_TEXTCOLOR);
+   g_pFilterUIRegion->m_Dialog.AddStatic(IDC_GLOSS_BIAS_STATICTEXT, L"Gloss bias:", iX, iY += UI_ELEMENT_VERTICAL_SPACING, 120, 16);
+   g_pFilterUIRegion->m_Dialog.AddEditBox( IDC_GLOSS_BIAS_EDITBOX, L"1", iX + 120, iY, UI_ELEMENT_WIDTH - 120, UI_ELEMENT_HEIGHT);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_BIAS_EDITBOX )->SetBorderWidth(UI_EDITBOX_BORDER_WIDTH);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_BIAS_EDITBOX )->SetSpacing(UI_EDITBOX_SPACING);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_BIAS_EDITBOX )->SetTextColor(UI_EDITBOX_TEXTCOLOR);
+   g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_BIAS_EDITBOX )->SetCaretColor(UI_EDITBOX_TEXTCOLOR);
    iY += 4;
    // SL END
 
@@ -1837,7 +1909,7 @@ void SetupGUI(void)
    iY += UI_ELEMENT_VERTICAL_SPACING;
 
    // start in bottom right
-   g_pAdjustOutputUIRegion->SetPosition( g_pBackBufferSurfaceDesc->Width - UI_ELEMENT_COLUMN_WIDTH, g_pBackBufferSurfaceDesc->Height - 2*iY, g_pBackBufferSurfaceDesc->Width, g_pBackBufferSurfaceDesc->Height );
+   g_pAdjustOutputUIRegion->SetPosition( g_pBackBufferSurfaceDesc->Width - UI_ELEMENT_COLUMN_WIDTH, g_pBackBufferSurfaceDesc->Height - 2*iY + 40, g_pBackBufferSurfaceDesc->Width, g_pBackBufferSurfaceDesc->Height );
    g_pAdjustOutputUIRegion->SetSize( UI_ELEMENT_COLUMN_WIDTH, iY );
 }
 
@@ -2917,6 +2989,9 @@ void CALLBACK KeyboardProc( UINT nChar, bool bKeyDown, bool bAltDown )
 	    // SL BEGIN
 		|| (g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_EDITBOX )->m_bHasFocus)
 		|| (g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX )->m_bHasFocus)
+		|| (g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_BIAS_EDITBOX)->m_bHasFocus)
+		|| (g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_GLOSS_SCALE_EDITBOX )->m_bHasFocus)
+		|| (g_pFilterUIRegion->m_Dialog.GetEditBox( IDC_NUM_MIPMAP_EDITBOX )->m_bHasFocus)
 		// SL END
       )
    {
@@ -3234,8 +3309,18 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl )
 		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_BASE_FILTER_ANGLE_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? D3DCOLOR_RGBA(128, 128, 128, 255) : D3DCOLOR_RGBA(255, 255, 255, 255));
 		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
 		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
-		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
-		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_BIAS_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_BIAS_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_SCALE_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_SCALE_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_NUM_MIPMAP_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_NUM_MIPMAP_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_COSINEPOWER_CHAIN_TYPE)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_LIGHTINGMODEL_TYPE)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
 		  // SL END
       }
       break;
@@ -3337,12 +3422,27 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl )
       // SL BEGIN
       case IDC_SPECULAR_POWER_EDITBOX:
       {
-         g_CubeGenApp.m_SpecularPower = _wtoi(g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->GetText());
+         g_CubeGenApp.m_SpecularPower = _wtof(g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->GetText());
       }
 	  break;
 	  case IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX:
 	  {
-		  g_CubeGenApp.m_SpecularPowerDropPerMip = _wtof(g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->GetText());
+		  g_CubeGenApp.m_CosinePowerDropPerMip = _wtof(g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->GetText());
+	  }
+	  break;
+	  case IDC_NUM_MIPMAP_EDITBOX:
+	  {
+		  g_CubeGenApp.m_NumMipmap = _wtof(g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_NUM_MIPMAP_EDITBOX)->GetText());
+	  }
+	  break;
+	  case IDC_GLOSS_SCALE_EDITBOX:
+	  {
+		  g_CubeGenApp.m_GlossScale = _wtof(g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_SCALE_EDITBOX)->GetText());
+	  }
+	  break;
+	  case IDC_GLOSS_BIAS_EDITBOX:
+	  {
+		  g_CubeGenApp.m_GlossBias = _wtof(g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_BIAS_EDITBOX)->GetText());
 	  }
 	  break;
       // SL END
@@ -3467,6 +3567,30 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl )
          g_CubeGenApp.m_bUseMultithread = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_MULTITHREAD_CHECKBOX )->GetChecked();
       }
       break;	 
+	  case IDC_EXCLUDEBASE_CHECKBOX:
+	  {
+	    g_CubeGenApp.m_bExcludeBase = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_EXCLUDEBASE_CHECKBOX )->GetChecked();
+	  }
+	  break;
+	  case IDC_COSINEPOWER_CHAIN_TYPE:
+	  {
+		  pItem = ((CDXUTComboBox*)pControl)->GetSelectedItem();
+		  g_CubeGenApp.m_CosinePowerMipmapChainMode = (int32)pItem->pData;
+
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_BIAS_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_BIAS_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_SCALE_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_SCALE_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_NUM_MIPMAP_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_NUM_MIPMAP_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+		  g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_COSINEPOWER_CHAIN_TYPE)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
+		  g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_LIGHTINGMODEL_TYPE)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
+	  }
+	  break;
 	  case IDC_IRRADIANCE_CUBEMAP_CHECKBOX:
    	  {
 		  g_CubeGenApp.m_bIrradianceCubemap = g_pFilterUIRegion->m_Dialog.GetCheckBox( IDC_IRRADIANCE_CUBEMAP_CHECKBOX )->GetChecked();
@@ -3612,10 +3736,16 @@ void SetUIElementsUsingCurrentSettings(void)
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_USE_SOLID_ANGLE_WEIGHTING)->SetChecked(g_CubeGenApp.m_bUseSolidAngleWeighting ? true:false  );
 
     // SL BEGIN
-    swprintf_s(staticText, 4096, L"%d", (uint32)(g_CubeGenApp.m_SpecularPower));
+    swprintf_s(staticText, 4096, L"%.2f", (float32)(g_CubeGenApp.m_SpecularPower));
     g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetText(staticText);
-	swprintf_s(staticText, 4096, L"%0.02f", (float32)(g_CubeGenApp.m_SpecularPowerDropPerMip));
+	swprintf_s(staticText, 4096, L"%0.02f", (float32)(g_CubeGenApp.m_CosinePowerDropPerMip));
 	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetText(staticText);
+	swprintf_s(staticText, 4096, L"%d", (int32)(g_CubeGenApp.m_NumMipmap));
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_NUM_MIPMAP_EDITBOX)->SetText(staticText);
+	swprintf_s(staticText, 4096, L"%d", (int32)(g_CubeGenApp.m_GlossScale));
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_SCALE_EDITBOX)->SetText(staticText);
+	swprintf_s(staticText, 4096, L"%d", (int32)(g_CubeGenApp.m_GlossBias));
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_BIAS_EDITBOX)->SetText(staticText);
 	g_pFilterUIRegion->m_Dialog.GetSlider(IDC_BASE_FILTER_ANGLE)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? false : true);
 	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_BASE_FILTER_ANGLE_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? false : true);
 	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_BASE_FILTER_ANGLE_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? D3DCOLOR_RGBA(128, 128, 128, 255) : D3DCOLOR_RGBA(255, 255, 255, 255));
@@ -3623,6 +3753,16 @@ void SetUIElementsUsingCurrentSettings(void)
 	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
 	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
 	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_DROP_PER_MIP_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_BIAS_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_BIAS_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_SCALE_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_GLOSS_SCALE_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_NUM_MIPMAP_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? true : false);
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_NUM_MIPMAP_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP ? true : false);
+	g_pFilterUIRegion->m_Dialog.GetEditBox(IDC_SPECULAR_POWER_EDITBOX)->SetTextColor(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER && g_CubeGenApp.m_CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP ? D3DCOLOR_RGBA(255, 255, 255, 255) :  D3DCOLOR_RGBA(128, 128, 128, 255));
+	g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_COSINEPOWER_CHAIN_TYPE)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
+	g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_LIGHTINGMODEL_TYPE)->SetEnabled(g_CubeGenApp.m_FilterTech == CP_FILTER_TYPE_COSINE_POWER ? true : false);
 	// SL END
 
    g_pFilterUIRegion->m_Dialog.GetSlider( IDC_INPUT_CLAMP )->SetValue(100 * log10(g_CubeGenApp.m_InputMaxClamp));
@@ -3658,6 +3798,8 @@ void SetUIElementsUsingCurrentSettings(void)
 
    // SL BEGIN
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_MULTITHREAD_CHECKBOX)->SetChecked(g_CubeGenApp.m_bUseMultithread ? true:false );
+   g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_EXCLUDEBASE_CHECKBOX)->SetChecked(g_CubeGenApp.m_bExcludeBase ? true:false );
+   g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_COSINEPOWER_CHAIN_TYPE)->SetSelectedByData((void *)g_CubeGenApp.m_CosinePowerMipmapChainMode );
    g_pFilterUIRegion->m_Dialog.GetCheckBox(IDC_IRRADIANCE_CUBEMAP_CHECKBOX)->SetChecked(g_CubeGenApp.m_bIrradianceCubemap ? true:false );      
    g_pFilterUIRegion->m_Dialog.GetComboBox(IDC_LIGHTINGMODEL_TYPE)->SetSelectedByData((void *)g_CubeGenApp.m_LightingModel );
    // SL END

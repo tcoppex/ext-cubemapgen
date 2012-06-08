@@ -46,8 +46,6 @@ CCubeGenApp::CCubeGenApp(void)
 
    // SL BEGIN
    m_bUseMultithread = TRUE;
-   m_bIrradianceCubemap = FALSE;
-   m_LightingModel = FALSE;
    // SL END
 
    //write mip level to alpha so the cube maps mip level can be determined by ps.2.0 or ps.2.b shaders
@@ -65,8 +63,15 @@ CCubeGenApp::CCubeGenApp(void)
    m_MipFilterAngleScale = 2.0f; 
    m_bUseSolidAngleWeighting = TRUE;
    // SL BEGIN
-   m_SpecularPower = 2048; // Default to 2048 because it is a fast computation when you swtich to cosinus power filter
-   m_SpecularPowerDropPerMip = 0.25;
+   m_SpecularPower = 2048.0f; // Default to 2048 because it is a fast computation when you swtich to cosinus power filter
+   m_CosinePowerDropPerMip = 0.25;
+   m_NumMipmap = 0;
+   m_CosinePowerMipmapChainMode = CP_COSINEPOWER_CHAIN_DROP;
+   m_bExcludeBase = FALSE;
+   m_bIrradianceCubemap = FALSE;
+   m_LightingModel = FALSE;
+   m_GlossScale = 10.0f;
+   m_GlossBias	= 1.0f;
    // SL END
 
    // SL BEGIN
@@ -1847,9 +1852,6 @@ void CCubeGenApp::FilterCubeMap(void)
 
    //cube edge fixup
    // SL BEGIN
-   // Scale highligh shape to better match lighting model as we can only filter cubemap with Phong filtering. 4.2 is from TriAce physically based rendering slide.
-   float32 SpecularPower = (m_LightingModel == CP_LIGHTINGMODEL_BLINN || m_LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? m_SpecularPower / 4.2f : m_SpecularPower; 
-
    int32 EdgeFixupTech = CP_FIXUP_NONE;
    // SL END
    if(m_bCubeEdgeFixup == TRUE)
@@ -1867,12 +1869,12 @@ void CCubeGenApp::FilterCubeMap(void)
    //filter the cube map mip chain
    //m_CubeMapProcessor.FilterCubeMapMipChain(m_BaseFilterAngle, m_MipInitialFilterAngle, m_MipFilterAngleScale, 
    //    m_FilterTech, m_EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting);
-
    // SL BEGIN
    //begin filtering, if one or more filtereing threads is enabled, initiate the filtering threads, and return 
    // from the function with the threads running in the background.
    m_CubeMapProcessor.InitiateFiltering(m_BaseFilterAngle, m_MipInitialFilterAngle, m_MipFilterAngleScale, 
-	  m_FilterTech, EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, SpecularPower, m_bUseMultithread, m_SpecularPowerDropPerMip, m_bIrradianceCubemap, m_LightingModel);
+	  m_FilterTech, EdgeFixupTech, fixupWidth, m_bUseSolidAngleWeighting, m_bUseMultithread, m_SpecularPower, m_CosinePowerDropPerMip, m_NumMipmap, m_CosinePowerMipmapChainMode,
+	  m_bExcludeBase, m_bIrradianceCubemap, m_LightingModel, m_GlossScale, m_GlossBias);
    // SL END
 
    m_FramesSinceLastRefresh = 0;

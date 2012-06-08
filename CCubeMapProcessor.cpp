@@ -24,14 +24,13 @@ DWORD WINAPI ThreadProcCPU0Filter(LPVOID a_NothingToPassToThisFunction)
 	  sg_FilterOptionsCPU0.m_InitialMipAngle,
 	  sg_FilterOptionsCPU0.m_MipAnglePerLevelScale,
 	  sg_FilterOptionsCPU0.m_FilterType,
-	  sg_FilterOptionsCPU0.m_FixupType,
+	  // SL BEGIN
+	  // sg_FilterOptionsCPU0.m_FixupType,
+	  // SL END
 	  sg_FilterOptionsCPU0.m_FixupWidth,
 	  sg_FilterOptionsCPU0.m_bUseSolidAngle 
 	  // SL BEGIN
-	  ,sg_FilterOptionsCPU0.m_SpecularPower
-	  ,sg_FilterOptionsCPU0.m_CosinePowerDropPerMip	  
-	  ,sg_FilterOptionsCPU0.m_bIrradianceCubemap
-	  ,sg_FilterOptionsCPU0.m_LightingModel	  
+	  ,sg_FilterOptionsCPU0.m_MCO
 	  // SL END
   );
 
@@ -48,13 +47,9 @@ DWORD WINAPI ThreadProcCPU0FilterMultithread(LPVOID a_NothingToPassToThisFunctio
 	  sg_FilterOptionsCPU0.m_InitialMipAngle,
 	  sg_FilterOptionsCPU0.m_MipAnglePerLevelScale,
 	  sg_FilterOptionsCPU0.m_FilterType,
-	  sg_FilterOptionsCPU0.m_FixupType,
 	  sg_FilterOptionsCPU0.m_FixupWidth,
 	  sg_FilterOptionsCPU0.m_bUseSolidAngle,
-	  sg_FilterOptionsCPU0.m_SpecularPower,
-	  sg_FilterOptionsCPU0.m_CosinePowerDropPerMip,
-	  sg_FilterOptionsCPU0.m_bIrradianceCubemap,
-	  sg_FilterOptionsCPU0.m_LightingModel
+	  sg_FilterOptionsCPU0.m_MCO
 	  );
 
    return(CP_THREAD_COMPLETED);
@@ -83,9 +78,9 @@ DWORD WINAPI ThreadProcCPU1Filter(LPVOID a_NothingToPassToThisFunction)
       sg_FilterOptionsCPU1.m_FaceIdxEnd,
       sg_FilterOptionsCPU1.m_ThreadIdx 
 	  // SL BEGIN
-	  ,sg_FilterOptionsCPU1.m_SpecularPower
-	  ,sg_FilterOptionsCPU1.m_LightingModel
-	  ,sg_FilterOptionsCPU1.m_FixupType
+	  ,sg_FilterOptionsCPU1.m_MCO.SpecularPower
+	  ,sg_FilterOptionsCPU1.m_MCO.LightingModel
+	  ,sg_FilterOptionsCPU1.m_MCO.FixupType
 	  // SL END
 	  ); 
       
@@ -866,7 +861,7 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
     CBBoxInt32 *a_FilterExtents, CImageSurface *a_NormCubeMap, CImageSurface *a_SrcCubeMap, 
     CP_ITYPE *a_DstVal, uint32 a_FilterType, bool8 a_bUseSolidAngleWeighting
 	// SL BEGIN
-	,uint32 a_SpecularPower
+	,float32 a_SpecularPower
 	,int32 a_LightingModel
 	// SL END
 	)
@@ -1021,7 +1016,7 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
    else // if (a_FilterType != CP_FILTER_TYPE_COSINE_POWER)
    {
    
-   int32 IsPhongBRDF	= (a_LightingModel == CP_LIGHTINGMODEL_PHONG_BRDF || a_LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? 1 : 0; // This value will be added to the specular power
+   int32 IsPhongBRDF = (a_LightingModel == CP_LIGHTINGMODEL_PHONG_BRDF || a_LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? 1 : 0; // This value will be added to the specular power
 
    //iterate over cubefaces
    for(iFaceIdx=0; iFaceIdx<6; iFaceIdx++ )
@@ -1064,7 +1059,7 @@ void CCubeMapProcessor::ProcessFilterExtents(float32 *a_CenterTapDir, float32 a_
 					// Here we decide if we use a Phong/Blinn or a Phong/Blinn BRDF.
 					// Phong/Blinn BRDF is just the Phong/Blinn model multiply by the cosine of the lambert law
 					// so just adding one to specularpower do the trick.					   
-					weight *= pow(tapDotProd, (float32)(a_SpecularPower + IsPhongBRDF));
+					weight *= pow(tapDotProd, (a_SpecularPower + (float32)IsPhongBRDF));
 
 					//iterate over channels
 					for(k=0; k<nSrcChannels; k++)   //(aSrcCubeMap[iFaceIdx].m_NumChannels) //up to 4 channels 
@@ -1854,9 +1849,9 @@ void CCubeMapProcessor::GetOutputFaceData(int32 a_FaceIdx, int32 a_Level, int32 
 //
 //--------------------------------------------------------------------------------------
 void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-    int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
 	// SL BEGIN
-	, uint32 a_SpecularPower, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel
+    int32 a_FilterType, /* int32 a_FixupType, */ int32 a_FixupWidth, bool8 a_bUseSolidAngle	
+	, const ModifiedCubemapgenOption& a_MCO
 	// SL END
 	)
 {
@@ -1872,7 +1867,7 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 
    //Build filter lookup tables based on the source miplevel size
    // SL BEGIN
-   PrecomputeFilterLookupTables(a_FilterType, m_InputSurface[0].m_Width, a_BaseFilterAngle, a_FixupType);
+   PrecomputeFilterLookupTables(a_FilterType, m_InputSurface[0].m_Width, a_BaseFilterAngle, a_MCO.FixupType);
    // SL END
 
    //initialize thread progress
@@ -1884,11 +1879,11 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 
    // SL BEGIN
    // If diffuse convolution is required, go through SH filtering for the base level
-   if (a_bIrradianceCubemap)
+   if (a_MCO.bIrradianceCubemap)
    {
 	   // Note that we redo the normalization as in PrecomputeFilterLookupTables
 	   // Don't care for now because we should use Multithread approach
-	   SHFilterCubeMap(a_bUseSolidAngle, a_FixupType);
+	   SHFilterCubeMap(a_bUseSolidAngle, a_MCO.FixupType);
    }
    else
    {
@@ -1903,9 +1898,9 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 			 5,  //end at face 5
 			 0
 			// SL BEGIN
-			, a_SpecularPower
-			, a_LightingModel
-			, a_FixupType
+			, a_MCO.SpecularPower
+			, a_MCO.LightingModel
+			, a_MCO.FixupType
 			// SL END
 			 ); //thread 0 is processing
 	   }   
@@ -1927,11 +1922,7 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 		  sg_FilterOptionsCPU1.m_FaceIdxEnd = 5; 
 		  sg_FilterOptionsCPU1.m_ThreadIdx = 1; 
 		  // SL BEGIN
-		  sg_FilterOptionsCPU1.m_SpecularPower = a_SpecularPower;
-		  sg_FilterOptionsCPU1.m_CosinePowerDropPerMip = a_CosinePowerDropPerMip;
-		  sg_FilterOptionsCPU1.m_bIrradianceCubemap = a_bIrradianceCubemap;
-		  sg_FilterOptionsCPU1.m_LightingModel = a_LightingModel;
-		  sg_FilterOptionsCPU1.m_FixupType = a_FixupType;
+		  sg_FilterOptionsCPU1.m_MCO = a_MCO;
 
    		  sg_ThreadFilterFace[1].m_ThreadProgress.m_CurrentMipLevel = 0;
 		  sg_ThreadFilterFace[1].m_ThreadProgress.m_CurrentFace = 3;
@@ -1954,9 +1945,9 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 			 2,  //end at face 2
 			 0
 			// SL BEGIN
-			, a_SpecularPower
-			, a_LightingModel
-			, a_FixupType
+			, a_MCO.SpecularPower
+			, a_MCO.LightingModel
+			, a_MCO.FixupType
 			// SL END
 			 ); //thread 0 is processing
 
@@ -1977,7 +1968,7 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
    sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentFace = 0;
    // SL END
 
-   FixupCubeEdges(m_OutputSurface[0], a_FixupType, a_FixupWidth);
+   FixupCubeEdges(m_OutputSurface[0], a_MCO.FixupType, a_FixupWidth);
 
    //Cone angle start (for generating subsequent mip levels)
    coneAngle = a_InitialMipAngle;
@@ -2001,7 +1992,7 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
 
       //Build filter lookup tables based on the source miplevel size
 	  // SL BEGIN
-      PrecomputeFilterLookupTables(a_FilterType, m_OutputSurface[i][0].m_Width, coneAngle, a_FixupType);
+      PrecomputeFilterLookupTables(a_FilterType, m_OutputSurface[i][0].m_Width, coneAngle, a_MCO.FixupType);
 	  // SL END
 
       //filter cube surfaces
@@ -2010,9 +2001,9 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
          5,  //end at face 5
          0
 		// SL BEGIN
-		, a_SpecularPower
-		, a_LightingModel
-		, a_FixupType
+		, a_MCO.SpecularPower
+		, a_MCO.LightingModel
+		, a_MCO.FixupType
 		// SL END
 		 ); //thread 0 is processing
 
@@ -2022,7 +2013,7 @@ void CCubeMapProcessor::FilterCubeMapMipChain(float32 a_BaseFilterAngle, float32
       sg_ThreadFilterFace[0].m_ThreadProgress.m_CurrentFace = 0;
 	  // SL END
 
-      FixupCubeEdges(m_OutputSurface[i+1], a_FixupType, a_FixupWidth);        
+      FixupCubeEdges(m_OutputSurface[i+1], a_MCO.FixupType, a_FixupWidth);        
 
       coneAngle = coneAngle * a_MipAnglePerLevelScale;
    }
@@ -2097,9 +2088,7 @@ void CCubeMapProcessor::FilterCubeSurfaces(CImageSurface *a_SrcCubeMap, CImageSu
     float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, int32 a_FaceIdxStart, 
     int32 a_FaceIdxEnd, int32 a_ThreadIdx
 	// SL BEGIN	
-	, uint32 a_SpecularPower
-	, int32 a_LightingModel
-	, int32 a_FixupType
+	, float32 a_SpecularPower, int32 a_LightingModel, int32 a_FixupType
 	// SL END
 	)
 {
@@ -2228,13 +2217,40 @@ static float32 GetBaseFilterAngle(float32 cosinePower)
 //starts a new thread to execute the filtering options
 //
 //--------------------------------------------------------------------------------------
-void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, 
-      float32 a_MipAnglePerLevelScale, int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
-	  // SL BEGIN
-	  , uint32 a_SpecularPower, bool8 a_bUseMultithread, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel
+void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale,
+		int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle
+	  // SL BEGIN 
+	  , bool8 a_bUseMultithread, float32 a_SpecularPower, float32 a_CosinePowerDropPerMip, int32 a_NumMipmap, int32 a_CosinePowerMipmapChainMode
+	  ,	bool8 a_bExcludeBase, bool8 a_bIrradianceCubemap,	int32 a_LightingModel, float32 a_GlossScale, float32 a_GlossBias
 	  // SL END
 	  )
 {
+	// SL BEGIN
+	ModifiedCubemapgenOption MCO;
+	// Scale highlight shape to better match lighting model as we can only filter cubemap with Phong filtering.
+	// http://seblagarde.wordpress.com/2012/03/29/relationship-between-phong-and-blinn-lighting-model/
+
+	// Approximate curve
+	float32 Factor = 1.0f;
+	if (a_SpecularPower != 0.0f)
+	{
+		float32 SP_2	= a_SpecularPower * a_SpecularPower;
+		float32 SP_3	= SP_2 * a_SpecularPower;
+		Factor		= 4.00012f - (0.624042f / SP_3) + (0.728329f / SP_2) + (1.22792f / a_SpecularPower);
+	}
+
+	MCO.SpecularPower				= (a_LightingModel == CP_LIGHTINGMODEL_BLINN || a_LightingModel == CP_LIGHTINGMODEL_BLINN_BRDF) ? a_SpecularPower / Factor : a_SpecularPower; 
+	MCO.CosinePowerDropPerMip		= a_CosinePowerDropPerMip;
+	MCO.NumMipmap					= a_NumMipmap;
+	MCO.CosinePowerMipmapChainMode	= a_CosinePowerMipmapChainMode;
+	MCO.bExcludeBase				= a_bExcludeBase;
+	MCO.bIrradianceCubemap			= a_bIrradianceCubemap;
+	MCO.LightingModel				= a_LightingModel;
+	MCO.FixupType					= a_FixupType;
+	MCO.GlossScale					= a_GlossScale;
+	MCO.GlossBias					= a_GlossBias;
+	// SL END
+
    SECURITY_ATTRIBUTES secAttr;
 
    secAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -2264,15 +2280,13 @@ void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_I
       sg_FilterOptionsCPU0.m_InitialMipAngle = a_InitialMipAngle;
       sg_FilterOptionsCPU0.m_MipAnglePerLevelScale = a_MipAnglePerLevelScale; 
       sg_FilterOptionsCPU0.m_FilterType = a_FilterType;
-      sg_FilterOptionsCPU0.m_FixupType = a_FixupType;
+	  // SL BEGIN
+      // sg_FilterOptionsCPU0.m_FixupType = a_FixupType;
+	  // SL END
       sg_FilterOptionsCPU0.m_FixupWidth = a_FixupWidth;
       sg_FilterOptionsCPU0.m_bUseSolidAngle = a_bUseSolidAngle;
 	  // SL BEGIN
-	  sg_FilterOptionsCPU0.m_SpecularPower = a_SpecularPower;
-	  sg_FilterOptionsCPU0.m_CosinePowerDropPerMip = a_CosinePowerDropPerMip;
-	  sg_FilterOptionsCPU0.m_bIrradianceCubemap = a_bIrradianceCubemap;
-	  sg_FilterOptionsCPU0.m_LightingModel = a_LightingModel;
-	  sg_FilterOptionsCPU0.m_FixupType = a_FixupType;
+	  sg_FilterOptionsCPU0.m_MCO = MCO;
 	  // SL END
 
       m_Status = CP_STATUS_PROCESSING;
@@ -2308,9 +2322,9 @@ void CCubeMapProcessor::InitiateFiltering(float32 a_BaseFilterAngle, float32 a_I
    else //otherwise call filtering function from the current process
    {
       FilterCubeMapMipChain(a_BaseFilterAngle, a_InitialMipAngle, a_MipAnglePerLevelScale, a_FilterType, 
-         a_FixupType, a_FixupWidth, a_bUseSolidAngle
-		// SL BEGIN
-		,a_SpecularPower, a_CosinePowerDropPerMip, a_bIrradianceCubemap, a_LightingModel
+		  // SL BEGIN
+         /* a_FixupType,*/ a_FixupWidth, a_bUseSolidAngle		
+		,MCO
 		// SL END
 		 );
    
@@ -2729,7 +2743,7 @@ DWORD WINAPI ThreadProcFilterFace(LPVOID a_ThreadIdx)
 }
 
 void CCubeMapProcessor::FilterCubeSurfacesMultithread(CImageSurface *a_SrcCubeMap, CImageSurface *a_DstCubeMap, 
-    float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, uint32 a_MipIndex, int32 a_LightingModel, int32 a_FixupType)
+    float32 a_FilterConeAngle, int32 a_FilterType, bool8 a_bUseSolidAngle, float32 a_SpecularPower, uint32 a_MipIndex, int32 a_LightingModel, int32 a_FixupType)
 {
     CBBoxInt32    filterExtents[6];   //bounding box per face to specify region to process
                                       // note that pixels within these regions may be rejected 
@@ -3070,28 +3084,45 @@ void CCubeMapProcessor::SHFilterCubeMap(bool8 a_bUseSolidAngleWeighting, int32 a
 }
 
 void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAngle, float32 a_InitialMipAngle, float32 a_MipAnglePerLevelScale, 
-    int32 a_FilterType, int32 a_FixupType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, uint32 a_SpecularPower, float32 a_CosinePowerDropPerMip, bool8 a_bIrradianceCubemap, int32 a_LightingModel
+    int32 a_FilterType, int32 a_FixupWidth, bool8 a_bUseSolidAngle, const ModifiedCubemapgenOption& a_MCO
 	)
 {
 	//Cone angle start (for generating subsequent mip levels)
 	float32 coneAngle = a_InitialMipAngle;
-	float32 specularPower = a_SpecularPower;
+	float32 specularPower = a_MCO.SpecularPower;
 	int32 Num = m_NumMipLevels; // Note that we need to filter the first level before generating mipmap
 								// So LevelIndex == 0 is base filtering hen LevelIndex > 0 is mipmap generation
 
 	for(int32 LevelIndex = 0; LevelIndex < Num; LevelIndex++)
 	{
+		// IF we require it calculate the specular power to used for the filtering
+		if ( a_FilterType == CP_FILTER_TYPE_COSINE_POWER && a_MCO.CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_MIPMAP && a_MCO.NumMipmap > 1)
+		{
+			int32 NumMipmap			= min(a_MCO.NumMipmap, Num);
+			float32 Glossiness		= (NumMipmap == 1) ? 1.0f : max(1.0f - (FLOAT)(LevelIndex) / (FLOAT)(NumMipmap - 1), 0.0f);
+			// This function must match the decompression function of the engine.
+			specularPower = powf(2.0f, a_MCO.GlossScale * Glossiness + a_MCO.GlossBias);
+		}
+
+		// TODO : Write a function to copy and scale the base mipmap in output
+		// I am just lazy here and just put a high specular power value, and do some if.
+		if (a_FilterType == CP_FILTER_TYPE_COSINE_POWER && a_MCO.bExcludeBase && (LevelIndex == 0))
+		{
+			// If we don't want to process the base mipmap, just put a very high specular power (this allow to handle scale of the texture).
+			specularPower = 100000.0f;
+		}
+
 		// If diffuse convolution is required, go through SH filtering for base level
 		// Other level have no meaning in this case.
-		if (LevelIndex == 0 && a_bIrradianceCubemap)
+		if (LevelIndex == 0 && a_MCO.bIrradianceCubemap)
 		{
-			SHFilterCubeMap(a_bUseSolidAngle, a_FixupType);
+			SHFilterCubeMap(a_bUseSolidAngle, a_MCO.FixupType);
 
-			FixupCubeEdges(m_OutputSurface[0], a_FixupType, a_FixupWidth);
+			FixupCubeEdges(m_OutputSurface[0], a_MCO.FixupType, a_FixupWidth);
 
 			continue;
 		}
-		else if (a_bIrradianceCubemap)
+		else if (a_MCO.bIrradianceCubemap)
 		{
 			// Following code will perturb artists which will not understand to check the select mip level 0 (the main view perform filtering...) so 
 			// just apply a cosine filter with small angle for mipamp.
@@ -3170,13 +3201,13 @@ void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAng
 
 		//Build filter lookup tables based on the source miplevel size
 		// SL BEGIN
-		PrecomputeFilterLookupTables(FilterType, SrcCubeImage->m_Width, Angle, a_FixupType);
+		PrecomputeFilterLookupTables(FilterType, SrcCubeImage->m_Width, Angle, a_MCO.FixupType);
 		// SL END
 
 		// Use multithread only for large mipmap
 		if (SrcCubeImage->m_Width >= 64)
 		{
-			FilterCubeSurfacesMultithread(SrcCubeImage, DstCubeImage, Angle, FilterType, a_bUseSolidAngle, specularPower, LevelIndex, a_LightingModel, a_FixupType);
+			FilterCubeSurfacesMultithread(SrcCubeImage, DstCubeImage, Angle, FilterType, a_bUseSolidAngle, specularPower, LevelIndex, a_MCO.LightingModel, a_MCO.FixupType);
 		}
 		else
 		{
@@ -3186,19 +3217,25 @@ void CCubeMapProcessor::FilterCubeMapMipChainMultithread(float32 a_BaseFilterAng
 								5,  //end at face 5
 								0, //Main thread is processing
 								specularPower,
-								a_LightingModel,
-								a_FixupType
+								a_MCO.LightingModel,
+								a_MCO.FixupType
 								); 
 
 		}
 
-		// Decrease the specular power to genreate the mipmap chain
-		if ( a_FilterType == CP_FILTER_TYPE_COSINE_POWER )
-		{
-			specularPower *= a_CosinePowerDropPerMip;
-		}
+		FixupCubeEdges(DstCubeImage, a_MCO.FixupType, a_FixupWidth);
 
-		FixupCubeEdges(DstCubeImage, a_FixupType, a_FixupWidth);
+		// Decrease the specular power to generate the mipmap chain
+		if ( a_FilterType == CP_FILTER_TYPE_COSINE_POWER && a_MCO.CosinePowerMipmapChainMode == CP_COSINEPOWER_CHAIN_DROP)
+		{
+			// TODO : Use another method for Exclude (see first comment at start of the function
+			if (a_MCO.bExcludeBase && (LevelIndex == 0))
+			{
+				specularPower = a_MCO.SpecularPower;
+			}
+
+			specularPower *= a_MCO.CosinePowerDropPerMip;
+		}
 	}
 
 	m_Status = CP_STATUS_FILTER_COMPLETED;

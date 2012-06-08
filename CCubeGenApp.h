@@ -106,8 +106,6 @@ public:
    bool8 m_bOutputPeriodicRefresh;     //whether or not to refresh output cubemap every so many frames
    // SL BEGIN
    bool8 m_bUseMultithread;
-   bool8 m_bIrradianceCubemap;
-   int32 m_LightingModel;
    // SL END
    int32 m_FramesSinceLastRefresh;     //number of frames since last cubemap refresh
 
@@ -125,8 +123,15 @@ public:
    bool8               m_bUseSolidAngleWeighting;
    // SL BEGIN
    // Specular power will be used when cosinus power filter is set
-   uint32			   m_SpecularPower;
-   float32			   m_SpecularPowerDropPerMip;
+   float32			   m_SpecularPower;
+   float32			   m_CosinePowerDropPerMip;
+   int32			   m_NumMipmap;
+   int32		   	   m_CosinePowerMipmapChainMode;
+   bool8			   m_bExcludeBase;
+   bool8			   m_bIrradianceCubemap;
+   int32			   m_LightingModel;
+   float32			   m_GlossScale;
+   float32			   m_GlossBias;
    // SL END
 
    int32               m_EdgeFixupTech;
