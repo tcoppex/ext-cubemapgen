@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="9.00"
+	Version="9,00"
 	Name="CubeGen"
 	ProjectGUID="{799C4DD7-35E7-4FA7-AA29-F0DF4101DCDD}"
 	RootNamespace="CubeGen"
@@ -70,7 +70,7 @@
 				Name="VCLinkerTool"
 				AdditionalOptions="/MACHINE:I386 /IGNORE:4089"
 				AdditionalDependencies="dxerr.lib dxguid.lib d3dx9d.lib d3d9.lib winmm.lib comctl32.lib"
-				OutputFile="$(OutDir)/CubeMapGen-debug.exe"
+				OutputFile="$(OutDir)/ModifiedCubeMapGen-debug.exe"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="$(DXSDK_DIR)Lib\x86"
 				GenerateDebugInformation="true"
@@ -241,7 +241,7 @@
 				Name="VCLinkerTool"
 				AdditionalOptions="/MACHINE:I386 /IGNORE:4089"
 				AdditionalDependencies="dxerr.lib dxguid.lib d3dx9.lib d3d9.lib winmm.lib comctl32.lib"
-				OutputFile="$(OutDir)/CubeMapGen.exe"
+				OutputFile="$(OutDir)/ModifiedCubeMapGen.exe"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="$(DXSDK_DIR)Lib\x86"
 				GenerateDebugInformation="false"
