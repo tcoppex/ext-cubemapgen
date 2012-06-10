@@ -100,6 +100,9 @@ public:
    int32 m_MipLevelDisplayed;
    bool8 m_bMipLevelClampEnable;       //mip level clamp enable
    bool8 m_bShowAlpha;                 //show alpha
+   // SL BEGIN
+   bool8 m_bFixSeams;  
+   // SL END
    bool8 m_bDrawSkySphere;             //draw skysphere
    bool8 m_bCenterObject;              //center object
 

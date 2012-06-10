@@ -31,6 +31,10 @@ float  g_fScaleFactor;              // intensity scale factor
 float  g_fNumMipLevels;             // number of mip levels in mip chain
 
 bool   g_bShowAlpha;                // show alpha from cubemap
+// SL BEGIN
+bool	g_bFixSeams;
+float	g_fCubeSize;
+// SL END
 
 float g_fRoughnessScaleFactor = 4.0; //number of miplevels to go down in cubemap for the roughest areas
 
@@ -207,6 +211,20 @@ float4 ps_BaseCubeNorm( float2 oBaseTexCoord : TEXCOORD0,
                    float3 oWorldSpaceNormal : TEXCOORD1) : COLOR0
 {
    float4 baseMap, cubeMap;
+   
+   // SL BEGIN
+   if (g_bFixSeams)
+   {
+	   // Note : LOD level to display is fixed in .fx see
+	   // MaxMipLevel = (g_fMipLevelClamp); and MipMapLodBias = (g_fMipLODBias);
+	   // so texCUBE show the right lod. Standard code should use texCUBElod
+		float scale = 1 - exp2(g_fMipLevelClamp) / g_fCubeSize;
+		float M = max(max(abs(oWorldSpaceNormal.x), abs(oWorldSpaceNormal.y)), abs(oWorldSpaceNormal.z));
+		if (abs(oWorldSpaceNormal.x) != M) oWorldSpaceNormal.x *= scale;
+		if (abs(oWorldSpaceNormal.y) != M) oWorldSpaceNormal.y *= scale;
+		if (abs(oWorldSpaceNormal.z) != M) oWorldSpaceNormal.z *= scale;
+   }
+  // SL END
 
    baseMap = tex2D(BaseSampler, oBaseTexCoord);
    //cubeMap = texCUBEbias(CubeSampler, float4(oWorldSpaceNormal, g_fMipLODBias) );
@@ -217,7 +235,7 @@ float4 ps_BaseCubeNorm( float2 oBaseTexCoord : TEXCOORD0,
       cubeMap = cubeMap.a;
    }
 
-   return( g_fScaleFactor * baseMap * cubeMap );
+   return ( g_fScaleFactor * baseMap * cubeMap );
 }
 
 

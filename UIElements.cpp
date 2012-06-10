@@ -236,7 +236,7 @@ HANDLE                  g_ConsoleHandle;                 // Console handle
 #define IDC_NUM_MIPMAP_STATICTEXT				2113
 #define IDC_NUM_MIPMAP_EDITBOX					2114
 #define IDC_COSINEPOWER_CHAIN_TYPE				2115
-
+#define IDC_FIX_SEAMS_CHECKBOX					2116
 // SL END
 
 //--------------------------------------------------------------------------------------
@@ -1601,6 +1601,12 @@ void SetupGUI(void)
 
    g_pDisplayUIRegion->m_Dialog.AddCheckBox( IDC_CENTER_OBJECT, L"CenterBB", iX + 66 + 55, iY, 66, 16 );
    g_pDisplayUIRegion->m_Dialog.GetCheckBox( IDC_CENTER_OBJECT  )->SetChecked(false);
+
+	// SL BEGIN
+   iY += UI_ELEMENT_VERTICAL_SPACING;
+   g_pDisplayUIRegion->m_Dialog.AddCheckBox( IDC_FIX_SEAMS_CHECKBOX, L"FixSeams", iX, iY, 70, 16 );
+   g_pDisplayUIRegion->m_Dialog.GetCheckBox( IDC_FIX_SEAMS_CHECKBOX )->SetChecked(false);   
+   // SL END
 
    g_pDisplayUIRegion->m_Dialog.AddCheckBox( IDC_SKYBOX_CHECKBOX, L"Skybox", iX, iY += UI_ELEMENT_VERTICAL_SPACING - 2, 60, 16 );
    g_pDisplayUIRegion->m_Dialog.GetCheckBox( IDC_SKYBOX_CHECKBOX )->SetChecked(false);
@@ -3254,6 +3260,10 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl )
              swprintf_s(staticText, 4096, L"Mip Level %2d", g_CubeGenApp.m_MipLevelDisplayed);
              g_pDisplayUIRegion->m_Dialog.GetCheckBox( IDC_SELECT_MIP_CHECKBOX )->SetText(staticText);            
          }
+
+		 // SL BEGIN
+		 g_pDisplayUIRegion->m_Dialog.GetCheckBox(IDC_FIX_SEAMS_CHECKBOX)->SetEnabled(g_CubeGenApp.m_bMipLevelSelectEnable ? true : false);
+		 // SL END
       }
       break;
       case IDC_CLAMP_MIP_CHECKBOX:
@@ -3266,6 +3276,13 @@ void CALLBACK OnGUIEvent( UINT nEvent, int nControlID, CDXUTControl* pControl )
           g_CubeGenApp.m_bShowAlpha = g_pDisplayUIRegion->m_Dialog.GetCheckBox( IDC_SHOW_ALPHA_CHECKBOX )->GetChecked();
       }
       break;   
+      // SL BEGIN
+      case IDC_FIX_SEAMS_CHECKBOX:
+      {
+          g_CubeGenApp.m_bFixSeams = g_pDisplayUIRegion->m_Dialog.GetCheckBox( IDC_FIX_SEAMS_CHECKBOX )->GetChecked();
+      }
+      break;
+      // SL END
       case IDC_CENTER_OBJECT:
       {
           g_CubeGenApp.m_bCenterObject = g_pDisplayUIRegion->m_Dialog.GetCheckBox( IDC_CENTER_OBJECT )->GetChecked();
@@ -3692,6 +3709,10 @@ void SetUIElementsUsingCurrentSettings(void)
 
    g_pDisplayUIRegion->m_Dialog.GetCheckBox(IDC_SELECT_MIP_CHECKBOX)->SetChecked(g_CubeGenApp.m_bMipLevelSelectEnable ? true:false);
    g_pDisplayUIRegion->m_Dialog.GetCheckBox(IDC_CLAMP_MIP_CHECKBOX)->SetChecked(g_CubeGenApp.m_bMipLevelClampEnable ? true:false );
+   // SL BEGIN
+   g_pDisplayUIRegion->m_Dialog.GetCheckBox(IDC_FIX_SEAMS_CHECKBOX)->SetEnabled(g_CubeGenApp.m_bMipLevelSelectEnable ? true : false);
+   // SL END
+   
    if((g_CubeGenApp.m_bMipLevelSelectEnable == TRUE) ||
       (g_CubeGenApp.m_bMipLevelClampEnable == TRUE) )
    {
@@ -3705,6 +3726,9 @@ void SetUIElementsUsingCurrentSettings(void)
    }
 
    g_pDisplayUIRegion->m_Dialog.GetCheckBox(IDC_SHOW_ALPHA_CHECKBOX)->SetChecked(g_CubeGenApp.m_bShowAlpha ? true:false );
+   // SL BEGIN
+   g_pDisplayUIRegion->m_Dialog.GetCheckBox(IDC_FIX_SEAMS_CHECKBOX)->SetChecked(g_CubeGenApp.m_bFixSeams ? true:false );
+   // SL END
 
    SetMipSliderRange();
    g_pDisplayUIRegion->m_Dialog.GetSlider(IDC_MIP_LEVEL)->SetValue(g_CubeGenApp.m_MipLevelDisplayed);

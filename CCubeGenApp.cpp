@@ -39,6 +39,9 @@ CCubeGenApp::CCubeGenApp(void)
    m_bMipLevelSelectEnable = FALSE;
    m_MipLevelDisplayed = 0;
    m_bShowAlpha = FALSE;
+   // SL BEGIN
+   m_bFixSeams = FALSE;
+   // SL END
    m_bDrawSkySphere = FALSE;
 
    //clamp max mip level using sampler state MaxMipLevel
@@ -1251,6 +1254,9 @@ void CCubeGenApp::DrawScene(int32 a_RenderTechnique)
    {
       m_pEffect.m_pEffect->SetTexture("g_tCubeMap", m_pInputCubeMap.m_pCubeTexture);
       m_pEffect.m_pEffect->SetBool("g_bShowAlpha", false);  
+	  // SL BEGIN
+	  m_pEffect.m_pEffect->SetBool("g_bFixSeams", false);  
+	  // SL END
       m_pEffect.m_pEffect->SetFloat("g_fMipLevelClamp", 0.0f);    
       m_pEffect.m_pEffect->SetFloat("g_fMipLODBias", 0.0f);    
       m_pEffect.DrawGeom("CubeMapNorm", &m_GeomSkySphere );
@@ -1260,17 +1266,28 @@ void CCubeGenApp::DrawScene(int32 a_RenderTechnique)
    m_pEffect.m_pEffect->SetFloat("g_fScaleFactor", 1.0f);     
 
    //setup any textures needed
+   // SL BEGIN
+   float32 CubeSize = 0;
+   // SL END
    if(m_DisplayCubeSource == CG_CUBE_DISPLAY_INPUT)
    {
       m_pEffect.m_pEffect->SetTexture("g_tCubeMap", m_pInputCubeMap.m_pCubeTexture);
 
       m_pEffect.m_pEffect->SetFloat("g_fNumMipLevels", (float32) m_pInputCubeMap.m_NumMipLevels );
+
+	  // SL BEGIN
+	  CubeSize = m_pInputCubeMap.m_Width;
+	  // SL END
    }
    else // (m_DisplayCubeSource == CG_CUBE_DISPLAY_OUTPUT)
    {
       m_pEffect.m_pEffect->SetTexture("g_tCubeMap", m_pOutputCubeMap.m_pCubeTexture);    
 
       m_pEffect.m_pEffect->SetFloat("g_fNumMipLevels", (float32) m_pOutputCubeMap.m_NumMipLevels );
+
+	  // SL BEGIN
+	  CubeSize = m_pOutputCubeMap.m_Width;
+	  // SL END
    }
 
    //if displying only a single mip level, setup texCUBEBias amounts
@@ -1283,11 +1300,20 @@ void CCubeGenApp::DrawScene(int32 a_RenderTechnique)
       m_pEffect.m_pEffect->SetFloat("g_fMipLODBias", 0);
    }
 
+   // SL BEGIN
+   m_pEffect.m_pEffect->SetBool("g_bFixSeams", false); 
+   m_pEffect.m_pEffect->SetFloat("g_fCubeSize", CubeSize); 
+   // SL END
+
    //if displying only a single mip level, or clamping the max mip level, 
    //  setup mip level select/clamp using maxMipLOD settings
    if(m_bMipLevelClampEnable || m_bMipLevelSelectEnable)
    {
       m_pEffect.m_pEffect->SetFloat("g_fMipLevelClamp", (float32)m_MipLevelDisplayed);    
+	  // SL BEGIN
+	  // This option can only be enabled when m_bMipLevelSelectEnable is true
+	  m_pEffect.m_pEffect->SetBool("g_bFixSeams", m_bFixSeams); 
+	  // SL END
    }
    else
    {
