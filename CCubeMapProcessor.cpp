@@ -269,12 +269,22 @@ void TexelCoordToVect(int32 a_FaceIdx, float32 a_U, float32 a_V, int32 a_Size, f
 	float32 nvcU, nvcV;
 	float32 tempVec[3];
 
-	// Change from original AMD code
-	// transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
-	// + 0.5f is for texel center addressing
-	nvcU = (2.0f * ((float32)a_U + 0.5f) / (float32)a_Size ) - 1.0f;
-	nvcV = (2.0f * ((float32)a_V + 0.5f) / (float32)a_Size ) - 1.0f;
-   
+	if (a_FixupType == CP_FIXUP_STRETCH && a_Size > 1)
+	{
+		// Code from Nvtt : http://code.google.com/p/nvidia-texture-tools/source/browse/trunk/src/nvtt/CubeSurface.cpp		
+		// transform from [0..res - 1] to [-1 .. 1], match up edges exactly.
+		nvcU = (2.0f * (float32)a_U / ((float32)a_Size - 1.0f) ) - 1.0f;
+		nvcV = (2.0f * (float32)a_V / ((float32)a_Size - 1.0f) ) - 1.0f;
+	}
+	else
+	{
+		// Change from original AMD code
+		// transform from [0..res - 1] to [- (1 - 1 / res) .. (1 - 1 / res)]
+		// + 0.5f is for texel center addressing
+		nvcU = (2.0f * ((float32)a_U + 0.5f) / (float32)a_Size ) - 1.0f;
+		nvcV = (2.0f * ((float32)a_V + 0.5f) / (float32)a_Size ) - 1.0f;
+	}
+
 	if (a_FixupType == CP_FIXUP_WARP && a_Size > 1)
 	{
 		// Code from Nvtt : http://code.google.com/p/nvidia-texture-tools/source/browse/trunk/src/nvtt/CubeSurface.cpp
@@ -1156,6 +1166,7 @@ void CCubeMapProcessor::FixupCubeEdges(CImageSurface *a_CubeMap, int32 a_FixupTy
 	  // SL BEGIN
 	  || (a_FixupType == CP_FIXUP_BENT && a_CubeMap[0].m_Width != 1) // In case of Bent Fixup and width of 1, we take the average of the texel color.
 	  || (a_FixupType == CP_FIXUP_WARP && a_CubeMap[0].m_Width != 1)
+	  || (a_FixupType == CP_FIXUP_STRETCH && a_CubeMap[0].m_Width != 1)	  
 	  // SL END
 	  )
    {

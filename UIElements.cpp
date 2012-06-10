@@ -874,6 +874,10 @@ void ProcessCommandLineArguements(void)
          {
             g_CubeGenApp.m_EdgeFixupTech = CP_FIXUP_WARP;
          }		 
+         else if( wcscmp(L"Stretch", suffixStr) == 0 )
+         {
+            g_CubeGenApp.m_EdgeFixupTech = CP_FIXUP_STRETCH;
+         }
 		 // SL END
          else
          {
@@ -1784,9 +1788,11 @@ void SetupGUI(void)
    // SL BEGIN
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"Bent", (void *) CP_FIXUP_BENT );
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"Warp", (void *) CP_FIXUP_WARP );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"Stretch", (void *) CP_FIXUP_STRETCH );
+   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->SetDropHeight( 7 * 16 );
    // SL END
    //g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->AddItem( L"None", (void *) CP_FIXUP_NONE );
-//   g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->SetDropHeight( 4 * UI_DROPDOWN_ITEM_HEIGHT );
+// g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->SetDropHeight( 4 * UI_DROPDOWN_ITEM_HEIGHT );
    g_pFilterUIRegion->m_Dialog.GetComboBox( IDC_EDGE_FIXUP_TYPE )->SetScrollBarWidth( 0 );
 
    g_pFilterUIRegion->m_Dialog.AddCheckBox( IDC_USE_SOLID_ANGLE_WEIGHTING, L"Use Solid Angle Weighting", iX, iY += UI_ELEMENT_VERTICAL_SPACING, UI_ELEMENT_WIDTH, 16 );

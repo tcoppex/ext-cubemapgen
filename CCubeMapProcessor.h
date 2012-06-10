@@ -111,6 +111,7 @@
 // SL BEGIN
 #define CP_FIXUP_BENT			 5
 #define CP_FIXUP_WARP			 6
+#define CP_FIXUP_STRETCH		 7
 
 // Cosine power MipmapChain mode
 #define CP_COSINEPOWER_CHAIN_DROP 0
@@ -380,7 +381,7 @@ public:
    //a_CubeMap       [in/out] Array of 6 images comprising cubemap miplevel to apply edge fixup to.
    //a_FixupType     [in]     Specifies the technique used for edge fixup.  Choose one of the following, 
    //                         CP_FIXUP_NONE, CP_FIXUP_PULL_LINEAR, CP_FIXUP_PULL_HERMITE, CP_FIXUP_AVERAGE_LINEAR, 
-   //                         CP_FIXUP_AVERAGE_HERMITE, CP_FIXUP_BENT, CP_FIXUP_WARP
+   //                         CP_FIXUP_AVERAGE_HERMITE, CP_FIXUP_BENT, CP_FIXUP_WARP, CP_FIXUP_STRETCH
    //a_FixupWidth    [in]     Fixup width in texels
    //
    //==========================================================================================================
@@ -572,7 +573,7 @@ public:
    //                                  CP_FILTER_TYPE_COSINE, CP_FILTER_TYPE_ANGULAR_GAUSSIAN
    //  a_FixupType                [in] Specifies the technique used for edge fixup.  Choose one of the following, 
    //                                  CP_FIXUP_NONE, CP_FIXUP_PULL_LINEAR, CP_FIXUP_PULL_HERMITE, 
-   //                                  CP_FIXUP_AVERAGE_LINEAR, CP_FIXUP_AVERAGE_HERMITE, CP_FIXUP_BENT, CP_FIXUP_WARP
+   //                                  CP_FIXUP_AVERAGE_LINEAR, CP_FIXUP_AVERAGE_HERMITE, CP_FIXUP_BENT, CP_FIXUP_WARP, CP_FIXUP_STRETCH
    //  a_FixupWidth               [in] Width in texels of the fixup region.
    //  a_bUseSolidAngle           [in] Set this to true in order to incorporate the solid angle subtended 
    //                                  each texel in the filter kernel in the filtering.
