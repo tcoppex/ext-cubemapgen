@@ -41,8 +41,24 @@ float32 CPf16Tof32(uint16 aVal)
       exponent = 255;
    }
    else if(exponent == 0) 
-   {  //  denormalized floats  mantissa is treated as = 0.f
-      exponent = 0;
+   {  
+	   // do nothing if mantissa is 0
+	   if(mantissa != 0)
+	   {
+			 // Adjust mantissa so it's normalized (and keep track of exp adjust)
+			int e = -1;
+			uint32 m = mantissa;
+
+			do
+			{
+				e++;
+				m <<= 1;
+			} 
+			while ((m & 0x400) == 0);
+		
+			exponent = 127 - 15 - e;
+			mantissa = (m & 0x3ff);
+	   }
    }
    else
    {  //change 15base exponent to 127base exponent 
