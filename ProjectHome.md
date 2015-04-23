@@ -1,0 +1,1 @@
+Cubemap generator from AMD, released as open source by amd on 2011
